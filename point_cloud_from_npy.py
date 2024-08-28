@@ -15,15 +15,32 @@ fx, fy, cx1, cy = 882.996114514, 882.996114514, 445.06146749, 190.24049547
 cx2 = 445.061467
 baseline = 5.8513759749420302 # mm
 
-def visualize_point_cloud(pcd):
-
-    open3d.visualization.draw_geometries([pcd],
+def visualize_point_cloud(objects):
+    open3d.visualization.draw_geometries(objects,
                                 #   zoom=1
                                 #   ,
                                 #   front=[-0.0, -0.0, -0.1],
                                 #   lookat=[2.6172, 2.0475, 1.532],
                                 #   up=[-0.0694, -0.5, 0.2024]
                                   )
+
+
+def load_thread(args):
+    thread_file_path = '/media/emmah/PortableSSD/Arclab_data/paper_singular_needle/frame_000000.npy'
+    thread_data = np.load(thread_file_path)
+    # thread_data = np.load(args.thread_file)
+    n = thread_data.shape[0]
+    vectors = [[i, i+1] for i in range(n)]
+    colors = [[1, 0, 0] for i in range(n-1)]
+
+    thread = open3d.geometry.LineSet()
+    thread.points = open3d.utility.Vector3dVector(thread_data)
+    thread.lines = open3d.utility.Vector2iVector(vectors)
+    thread.colors = open3d.utility.Vector3dVector(colors)
+
+    # pdb.set_trace()
+    # open3d.visualization.draw_geometries([thread])
+    return thread
 
 def generate_point_cloud(args):
     disp_path = args.npy_file
@@ -89,5 +106,7 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
+
+    thread = load_thread(args)
     pcd = generate_point_cloud(args)
-    visualize_point_cloud(pcd)
+    visualize_point_cloud([pcd, thread])
