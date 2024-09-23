@@ -7,7 +7,8 @@ import argparse
 import pdb
 import cv2 as cv
 import matplotlib.pyplot as plt
-import open3d
+import open3d as o3d
+import copy
 
 
 # camera parameters
@@ -16,30 +17,39 @@ cx2 = 445.061467
 baseline = 5.8513759749420302 # mm
 
 def visualize_point_cloud(objects):
-    open3d.visualization.draw_geometries(objects,
-                                #   zoom=1
-                                #   ,
-                                #   front=[-0.0, -0.0, -0.1],
-                                #   lookat=[2.6172, 2.0475, 1.532],
-                                #   up=[-0.0694, -0.5, 0.2024]
-                                  )
+    # Create a visualization object and window
+    vis = o3d.visualization.Visualizer()
+    vis.create_window()
+    for object in objects:
+        vis.add_geometry(object)
+    # o3d.visualization.draw_geometries(objects,
+    #                               zoom=1
+    #                               ,
+    #                               front=[-0.0, -0.0, -0.1],
+    #                               lookat=[0, 0, 0],
+    #                               up=[-0.0694, -0.5, 0.2024]
+    #                               )
+    # print("thread points in visualize:", np.asarray(objects[0].points), "array length", np.asarray(objects[0].points).size)
+    vis.run()
 
 
 def load_thread(args):
     thread_file_path = '/media/emmah/PortableSSD/Arclab_data/paper_singular_needle/frame_000000.npy'
     thread_data = np.load(thread_file_path)
+    thread_data = thread_data * 1000
     # thread_data = np.load(args.thread_file)
     n = thread_data.shape[0]
     vectors = [[i, i+1] for i in range(n)]
-    colors = [[1, 0, 0] for i in range(n-1)]
+    colors = [[0, 1, 0] for i in range(n-1)]
 
-    thread = open3d.geometry.LineSet()
-    thread.points = open3d.utility.Vector3dVector(thread_data)
-    thread.lines = open3d.utility.Vector2iVector(vectors)
-    thread.colors = open3d.utility.Vector3dVector(colors)
+    thread = o3d.geometry.LineSet()
+    thread.points = o3d.utility.Vector3dVector(thread_data)
+    thread.lines = o3d.utility.Vector2iVector(vectors)
+    thread.colors = o3d.utility.Vector3dVector(colors)
 
     # pdb.set_trace()
-    # open3d.visualization.draw_geometries([thread])
+    # o3d.visualization.draw_geometries([thread]S)
+    # print("thread points in load thread function:", np.asarray(thread.points) , "array length", np.asarray(thread.points).size)
     return thread
 
 def generate_point_cloud(args):
@@ -77,16 +87,55 @@ def generate_point_cloud(args):
     points = points_grid.transpose(1,2,0)[mask]
     colors = image[mask].astype(np.float64) / 255
 
-    pcd = open3d.geometry.PointCloud()
-    pcd.points = open3d.utility.Vector3dVector(points)
-    pcd.colors = open3d.utility.Vector3dVector(colors)
-    open3d.geometry.PointCloud.estimate_normals(pcd)
-    open3d.geometry.PointCloud.orient_normals_towards_camera_location(pcd)
+    pcd = o3d.geometry.PointCloud()
+    pcd.points = o3d.utility.Vector3dVector(points)
+    pcd.colors = o3d.utility.Vector3dVector(colors)
+    o3d.geometry.PointCloud.estimate_normals(pcd)
+    o3d.geometry.PointCloud.orient_normals_towards_camera_location(pcd)
 
-
-    # pdb.set_trace()
+    # down sample point cloud
+    pcd = o3d.geometry.PointCloud.random_down_sample(pcd, 0.5)
 
     return pcd
+
+def generate_bounding_box(point_cloud):
+    bounding_box = o3d.geometry.OrientedBoundingBox.get_oriented_bounding_box(point_cloud)
+    aligned_bounding_box = o3d.geometry.OrientedBoundingBox.get_axis_aligned_bounding_box(point_cloud)
+    bounding_box.color = [0, 1, 0]
+    bounding_vertices = np.asarray(o3d.geometry.OrientedBoundingBox.get_box_points(bounding_box))
+    # print("bounding box center:", bounding_box.center)
+    # print("bounding box vertices", bounding_vertices)
+
+
+    return bounding_box
+
+def create_geometry_at_points(points):
+    geometries = o3d.geometry.TriangleMesh()
+    for point in points:
+        sphere = o3d.geometry.TriangleMesh.create_sphere(radius=0.5) #create a small sphere to represent point
+        sphere.translate(point) #translate this sphere to point
+        geometries += sphere
+    geometries.paint_uniform_color([1.0, 0.0, 0.0])
+    return geometries
+
+def align_objects(first, second, first_center, second_center):
+    first_pts = np.asarray(first.points)
+    second_pts = np.asarray(second.points)
+    first_closest = first_pts[first_pts[:,2].argsort()[1]] # highest is closes
+    second_furthest = second_pts[second_pts[:,2].argsort()[-1]]
+    print("first closest", first_closest, "second futhest", second_furthest)
+    highlights = create_geometry_at_points([first_closest, second_furthest])  
+
+    tz = first_center[2] - second_furthest[2]
+    tx,ty= first_center[:2] - second_center[:2]
+    # translation = [tx, ty, -tz]
+    translation = [tx, ty, tz]
+    print("translation", translation)
+
+    transformed_second = copy.deepcopy(second).translate(translation)
+
+    return transformed_second, highlights
+    
 
 if __name__ == '__main__':
     ''' python point_cloud_from_npy.py \
@@ -108,5 +157,22 @@ if __name__ == '__main__':
 
 
     thread = load_thread(args)
+    # print("thread points in main:", np.asarray(thread.points), "array length", np.asarray(thread.points).size)
     pcd = generate_point_cloud(args)
-    visualize_point_cloud([pcd, thread])
+
+    meat_bound_box = generate_bounding_box(pcd)
+    thread_bound_box = generate_bounding_box(thread)
+
+    thread_trans, highlights = align_objects(pcd, thread, meat_bound_box.center, thread_bound_box.center)
+    origin = create_geometry_at_points([(0, 0, 0), (0, 0, 1), (0, 1, 0), (1, 0, 0)])
+    
+
+    visualize_point_cloud([
+                           thread,
+                           thread_trans,
+                           pcd,
+                           highlights,
+                           origin,
+                           meat_bound_box, 
+                           thread_bound_box
+                           ])
