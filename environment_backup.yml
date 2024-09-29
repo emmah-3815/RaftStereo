@@ -1,0 +1,21 @@
+name: raftstereo_backup
+channels:
+  - pytorch
+  - bioconda
+  - defaults
+dependencies:
+  - cudatoolkit=10.2.89=hfd86e86_1
+  - matplotlib
+  - imageio
+  - opencv
+  - opt_einsum
+  - python=3.7.6=h0371630_2
+  - pytorch=1.7.0=py3.7_cuda10.2.89_cudnn7.6.5_0
+  - scikit-image
+  - scipy
+  - tensorboard
+  - torchvision=0.8.1=py37_cu102
+  - tqdm
+  - p7zip
+  - pip:
+      - open3d==0.17.0
