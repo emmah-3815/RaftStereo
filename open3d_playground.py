@@ -22,8 +22,8 @@ def visualize_point_cloud(objects):
     vis.create_window()
     for object in objects:
         # down sample point cloud
-        if o3d.geometry.Geometry.get_geometry_type(object).value == 1: # type point cloud is 1
-            object = o3d.geometry.PointCloud.random_down_sample(object, 0.3)
+        # if o3d.geometry.Geometry.get_geometry_type(object).value == 1: # type point cloud is 1
+        #     object = o3d.geometry.PointCloud.random_down_sample(object, 0.3)
         vis.add_geometry(object)
     # o3d.visualization.draw_geometries(objects,
     #                               zoom=1
@@ -101,6 +101,47 @@ def generate_point_cloud(args):
 
     return pcd
 
+def generate_planes(args, pcd):
+    ## find most common plane ##
+    # plane_model, inliers = pcd.segment_plane(distance_threshold=0.01,
+    #                                         ransac_n=3,
+    #                                         num_iterations=1000)
+    # [a, b, c, d] = plane_model
+    # print(f"Plane equation: {a:.2f}x + {b:.2f}y + {c:.2f}z + {d:.2f} = 0")
+
+    # inlier_cloud = pcd.select_by_index(inliers)
+    # inlier_cloud.paint_uniform_color([1.0, 0, 0])
+    # outlier_cloud = pcd.select_by_index(inliers, invert=True)
+
+    # return inlier_cloud, outlier_cloud
+
+    # returns points in clusters based on density
+    # with o3d.utility.VerbosityContextManager(
+    #         o3d.utility.VerbosityLevel.Debug) as cm:
+    #     labels = np.array(
+    #         pcd.cluster_dbscan(eps=0.02, min_points=10, print_progress=True))
+
+    # max_label = labels.max()
+    # print(f"point cloud has {max_label + 1} clusters")
+    # colors = plt.get_cmap("tab20")(labels / (max_label if max_label > 0 else 1))
+    # colors[labels < 0] = 0
+    # pcd.colors = o3d.utility.Vector3dVector(colors[:, :3])
+    # return pcd
+
+    # pcd.paint_uniform_color([0.5, 0.5, 0.5])
+    downpcd_farthest = pcd.farthest_point_down_sample(1000) #2000 or below significant points
+    # key_points = np.arange(0, len(pcd.points), 2).tolist() #(start, stop, step)
+    # pcd_tree = o3d.geometry.KDTreeFlann(pcd)
+    downpcd_farthest.paint_uniform_color([0, 1, 0])
+    # print("Find its 200 nearest neighbors, and paint them blue.")
+    # [k, idx, _] = pcd_tree.search_knn_vector_3d(pcd.points[1500], 200)
+    # np.asarray(pcd.colors)[idx[1:], :] = [0, 0, 1]
+
+    return downpcd_farthest
+
+
+
+
 def generate_bounding_box(point_cloud):
     bounding_box = o3d.geometry.OrientedBoundingBox.get_oriented_bounding_box(point_cloud)
     aligned_bounding_box = o3d.geometry.OrientedBoundingBox.get_axis_aligned_bounding_box(point_cloud)
@@ -165,9 +206,9 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
     # parser.add_argument('--output_directory', help="directory to save output", default="demo_output")
-    parser.add_argument('--npy_file', help="path_to_npy_file", default="/media/emmah/PortableSSD/Arclab_data/trial_9_RAFT_output_1/frame_000001.npy")
-    parser.add_argument('--png_file', help="path_to_png_file_for_visualization", default="/media/emmah/PortableSSD/Arclab_data/trial_9_left_rgb/frame_000001.png")
-    parser.add_argument('--meat_mask_file', help="path_to_meat_mask", default="/media/emmah/PortableSSD/Arclab_data/trial_9_single_arm_no_tension_masks_meat_left/trial_9_single_arm_no_tension_masks_meat/frame0001.png")
+    parser.add_argument('--npy_file', help="path_to_npy_file", default="/media/emmah/PortableSSD/Arclab_data/trial_9_data/trial_9_RAFT_output_1/frame_000001.npy")
+    parser.add_argument('--png_file', help="path_to_png_file_for_visualization", default="/media/emmah/PortableSSD/Arclab_data/trial_9_data/trial_9_left_rgb/frame_000001.png")
+    parser.add_argument('--meat_mask_file', help="path_to_meat_mask", default="/media/emmah/PortableSSD/Arclab_data/trial_9_data/trial_9_single_arm_no_tension_masks_meat_left/trial_9_single_arm_no_tension_masks_meat/frame0001.png")
     parser.add_argument('--mask_erode', help='choose to erode mask for less chance of flying points', default=True)
 
     args = parser.parse_args()
@@ -180,6 +221,8 @@ if __name__ == '__main__':
     meat_bound_box = generate_bounding_box(pcd)
     thread_bound_box = generate_bounding_box(thread)
 
+    meat_clusters= generate_planes(args, pcd)
+
     thread_trans, highlights = align_objects(pcd, thread, meat_bound_box.center, thread_bound_box.center)
     thread_trans_bound_box = generate_bounding_box(thread_trans)
     origin = create_geometry_at_points([(0, 0, 0), (0, 0, 1), (0, 1, 0), (1, 0, 0)])
@@ -191,16 +234,20 @@ if __name__ == '__main__':
     # o3d.io.write_triangle_mesh(mesh_file, meat_mesh, write_vertex_normals=False, write_vertex_colors=False, print_progress=True)
     # tried to run it in py_pbd softbody, but the mesh failes to tetrahedralize
 
+    meat_point_cloud_file = "/media/emmah/PortableSSD/Arclab_data/meat_thread_data_9_26/trial_08_meat_pcd.pcd"
+    # o3d.io.write_point_cloud(meat_point_cloud_file, pcd)
+
 
 
 
     visualize_point_cloud([
-                           thread,
-                           thread_trans,
-                           pcd,
-                           highlights,
+                        #    thread,
+                        #    thread_trans,
+                        #    pcd,
+                        #    highlights,
                            origin,
                            meat_bound_box, 
-                           thread_bound_box,
-                           thread_trans_bound_box,
+                           meat_clusters,
+                        #    thread_bound_box,
+                        #    thread_trans_bound_box,
                            ])

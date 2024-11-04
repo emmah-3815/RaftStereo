@@ -19,7 +19,7 @@ import cv2
 
 import rosbag
 from sensor_msgs.msg import Image
-from cv_bridge import CvBridge
+# from cv_bridge import CvBridge
 
 def main():
     """Extract a folder of images from a rosbag.
@@ -30,7 +30,7 @@ def main():
     args = parser.parse_args()
 
     bag = rosbag.Bag(args.bag_file, "r")
-    bridge = CvBridge()
+    # bridge = CvBridge()
     count = 0
     for topic, msg, t in bag.read_messages():
         print(topic)

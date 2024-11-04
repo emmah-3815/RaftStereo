@@ -13,6 +13,12 @@ topics:
 To write into SSD Path:
 /media/emmah/PortableSSD/Arclab_data
 
+meat and thread date 9-26:
+python rosbag_extract.py --bag_file /media/emmah/PortableSSD/Arclab_data/meat_thread_data_9_26/trial_01.bag \
+    --output_dir /media/emmah/PortableSSD/Arclab_data/meat_thread_data_9_26/trial_01/ \
+        --topic /stereo/left/rectified_downscaled_image --output_name trial_01_left
+
+
 """
 
 # import rosbag
@@ -28,7 +34,7 @@ import pdb
 import cv2
 import numpy as np
 
-import rosbag
+import rosbag   
 from sensor_msgs.msg import Image
 from cv_bridge import CvBridge, CvBridgeError
 
@@ -58,40 +64,41 @@ def main():
     for topic, msg, t in bag.read_messages(topics=[args.topic]):
         
         # extract points
-        points = []
-        for i in range(len(msg.points)): # modify values from dictionary into list
-            point = [msg.points[i].x, msg.points[i].y, msg.points[i].z]
-            points.append(point)
-        # print(points)
-        points_list.append(points)
+        # points = []
+        # for i in range(len(msg.points)): # modify values from dictionary into list
+        #     point = [msg.points[i].x, msg.points[i].y, msg.points[i].z]
+        #     points.append(point)
+        # # print(points)
+        # points_list.append(points)
 
 
         # extract image
-        # try:
-        #     cv_img = bridge.compressed_imgmsg_to_cv2(msg) # tries compressed image convertion to cv2
+        try:
+            cv_img = bridge.compressed_imgmsg_to_cv2(msg) # tries compressed image convertion to cv2
 
-        # except:
-        #     print("something went wrong")
+        except:
+            print("something went wrong")
 
-        # try:
-            # cv_img = bridge.imgmsg_to_cv2(msg, desired_encoding="passthrough") # tries regular image convertion to cv2
-        # except AttributeError as e:
-            # try:
-                # cv_img = bridge.compressed_imgmsg_to_cv2(msg) # tries compressed image convertion to cv2
-# 
-            # except CvBridgeError as e:
-                # print(e)
+        try:
+            cv_img = bridge.imgmsg_to_cv2(msg, desired_encoding="passthrough") # tries regular image convertion to cv2
+        except AttributeError as e:
+            try:
+                cv_img = bridge.compressed_imgmsg_to_cv2(msg) # tries compressed image convertion to cv2
 
-        # cv_img = cv2.cvtColor(cv_img, cv2.COLOR_BGR2RGB) # convert bgr format to rgb
-        # cv2.imwrite(os.path.join(args.output_dir, args.output_name + "_%06i.png" % count), cv_img)
-        # print ("Wrote image %i" % count)
+            except CvBridgeError as e:
+                print(e)
+
+        cv_img = cv2.cvtColor(cv_img, cv2.COLOR_BGR2RGB) # convert bgr format to rgb
+        cv2.imwrite(os.path.join(args.output_dir, args.output_name + "_%06i.png" % count), cv_img)
+        print ("Wrote image %i" % count)
 
         
 
 
         count += 1
     # pdb.set_trace()
-    np.save(file_path, np.array(points_list[0]))
+    ## extract points
+    # np.save(file_path, np.array(points_list[0]))
     bag.close()
 
     return
