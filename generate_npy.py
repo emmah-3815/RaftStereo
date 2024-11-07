@@ -37,7 +37,7 @@ def demo(args):
         right_images = sorted(glob.glob(args.right_imgs, recursive=True))
 
 
-        '''python generate_npy.py --restore_ckpt models/raftstereo-realtime.pth \
+        '''python generate_npy.py --restore_ckpt /media/emmah/PortableSSD/Arclab_data/models/raftstereo-realtime.pth \
             --shared_backbone --n_downsample 3 --n_gru_layers 2 --slow_fast_gru --valid_iters 7 \
                 --corr_implementation reg --mixed_precision -l=/media/emmah/PortableSSD/Arclab_data/trial_9_left_rgb/*.png \
                     -r=/media/emmah/PortableSSD/Arclab_data/trial_9_right_rgb/*.png --save_numpy \

@@ -37,18 +37,20 @@ def visualize_point_cloud(objects):
 
 
 def load_thread(args):
-    thread_file_path = '/media/emmah/PortableSSD/Arclab_data/paper_singular_needle/frame_000000.npy'
+    thread_file_path = args.thread
     thread_data = np.load(thread_file_path)
     thread_data = thread_data * 1000
     # thread_data = np.load(args.thread_file)
     n = thread_data.shape[0]
-    vectors = [[i, i+1] for i in range(n)]
-    colors = [[0, 1, 0] for i in range(n-1)]
+    vectors = [[i, i+1] for i in range(n-1)]
+    colors = [[0, 0, 0] for i in range(n-1)]
 
+    # old working version without user defined attributes
     thread = o3d.geometry.LineSet()
     thread.points = o3d.utility.Vector3dVector(thread_data)
     thread.lines = o3d.utility.Vector2iVector(vectors)
     thread.colors = o3d.utility.Vector3dVector(colors)
+
 
     # pdb.set_trace()
     # o3d.visualization.draw_geometries([thread]S)
@@ -101,43 +103,22 @@ def generate_point_cloud(args):
 
     return pcd
 
-def generate_planes(args, pcd):
-    ## find most common plane ##
-    # plane_model, inliers = pcd.segment_plane(distance_threshold=0.01,
-    #                                         ransac_n=3,
-    #                                         num_iterations=1000)
-    # [a, b, c, d] = plane_model
-    # print(f"Plane equation: {a:.2f}x + {b:.2f}y + {c:.2f}z + {d:.2f} = 0")
+def KNN_play(args, pcd, thread): # pcd and thread as o3d.geometry objects
+    ## KNN search 200(neighbors) closest points on pcd with respect to each node on thread
+    color = 0
+    neighbors = 200    
+    key_points = thread.points
+    pcd_tree = o3d.geometry.KDTreeFlann(pcd)
+    spheres = o3d.geometry.TriangleMesh()
+    for point in key_points:
+        sphere = create_geometry_at_points([point], radius=0.5, color=[color, 0, 1])
+        spheres += sphere
+        print("Finding ", point, "'s ", neighbors, "nearest neighbors, and painting them blue")
+        [k, idx, _] = pcd_tree.search_knn_vector_3d(point, neighbors)
+        np.asarray(pcd.colors)[idx[0:], :] = [color, 0, 1] # set idx first index to 1 if want to skip the closest point
+        color += 1/len(key_points)
 
-    # inlier_cloud = pcd.select_by_index(inliers)
-    # inlier_cloud.paint_uniform_color([1.0, 0, 0])
-    # outlier_cloud = pcd.select_by_index(inliers, invert=True)
-
-    # return inlier_cloud, outlier_cloud
-
-    # returns points in clusters based on density
-    # with o3d.utility.VerbosityContextManager(
-    #         o3d.utility.VerbosityLevel.Debug) as cm:
-    #     labels = np.array(
-    #         pcd.cluster_dbscan(eps=0.02, min_points=10, print_progress=True))
-
-    # max_label = labels.max()
-    # print(f"point cloud has {max_label + 1} clusters")
-    # colors = plt.get_cmap("tab20")(labels / (max_label if max_label > 0 else 1))
-    # colors[labels < 0] = 0
-    # pcd.colors = o3d.utility.Vector3dVector(colors[:, :3])
-    # return pcd
-
-    # pcd.paint_uniform_color([0.5, 0.5, 0.5])
-    downpcd_farthest = pcd.farthest_point_down_sample(1000) #2000 or below significant points
-    # key_points = np.arange(0, len(pcd.points), 2).tolist() #(start, stop, step)
-    # pcd_tree = o3d.geometry.KDTreeFlann(pcd)
-    downpcd_farthest.paint_uniform_color([0, 1, 0])
-    # print("Find its 200 nearest neighbors, and paint them blue.")
-    # [k, idx, _] = pcd_tree.search_knn_vector_3d(pcd.points[1500], 200)
-    # np.asarray(pcd.colors)[idx[1:], :] = [0, 0, 1]
-
-    return downpcd_farthest
+    return pcd, spheres
 
 
 
@@ -153,13 +134,14 @@ def generate_bounding_box(point_cloud):
 
     return bounding_box
 
-def create_geometry_at_points(points):
+def create_geometry_at_points(points, radius=0.5, color=[1, 0, 0]):
     geometries = o3d.geometry.TriangleMesh()
     for point in points:
-        sphere = o3d.geometry.TriangleMesh.create_sphere(radius=0.5) #create a small sphere to represent point
+        sphere = o3d.geometry.TriangleMesh.create_sphere(radius) #create a small sphere to represent point
         sphere.translate(point) #translate this sphere to point
+        sphere.paint_uniform_color(color)
         geometries += sphere
-    geometries.paint_uniform_color([1.0, 0.0, 0.0])
+    # geometries.paint_uniform_color([1.0, 0.0, 0.0]) # paint all red
     return geometries
 
 def align_objects(first, second, first_center, second_center):
@@ -201,6 +183,14 @@ if __name__ == '__main__':
     --npy_file=/media/emmah/PortableSSD/Arclab_data/trial_9_RAFT_output_1/frame_000001.npy \
     --meat_mask=/media/emmah/PortableSSD/Arclab_data/trial_9_single_arm_no_tension_masks_meat_left/trial_9_single_arm_no_tension_masks_meat/frame0001.png 
     '''
+    '''
+    ## running from downloads files
+    python open3d_playground.py --npy_file /home/emmah/Downloads/trial_9_RAFT_output_1/frame_000001.npy \
+        --png_file /home/emmah/Downloads/trial_9_left_rgb/frame_000001.png --meat_mask_file\
+              /home/emmah/Downloads/trial_9_single_arm_no_tension_masks_meat_left/trial_9_single_arm_no_tension_masks_meat/frame0001.png \
+                --thread /home/emmah/Downloads/frame_000000.npy
+
+    '''
 
 
 
@@ -209,6 +199,7 @@ if __name__ == '__main__':
     parser.add_argument('--npy_file', help="path_to_npy_file", default="/media/emmah/PortableSSD/Arclab_data/trial_9_data/trial_9_RAFT_output_1/frame_000001.npy")
     parser.add_argument('--png_file', help="path_to_png_file_for_visualization", default="/media/emmah/PortableSSD/Arclab_data/trial_9_data/trial_9_left_rgb/frame_000001.png")
     parser.add_argument('--meat_mask_file', help="path_to_meat_mask", default="/media/emmah/PortableSSD/Arclab_data/trial_9_data/trial_9_single_arm_no_tension_masks_meat_left/trial_9_single_arm_no_tension_masks_meat/frame0001.png")
+    parser.add_argument('--thread', help='path to thread array data', default='/media/emmah/PortableSSD/Arclab_data/paper_singular_needle/frame_000000.npy')
     parser.add_argument('--mask_erode', help='choose to erode mask for less chance of flying points', default=True)
 
     args = parser.parse_args()
@@ -219,13 +210,15 @@ if __name__ == '__main__':
     pcd = generate_point_cloud(args)
 
     meat_bound_box = generate_bounding_box(pcd)
-    thread_bound_box = generate_bounding_box(thread)
+    thread_bound_box = o3d.geometry.LineSet.get_oriented_bounding_box(thread)
 
-    meat_clusters= generate_planes(args, pcd)
 
     thread_trans, highlights = align_objects(pcd, thread, meat_bound_box.center, thread_bound_box.center)
-    thread_trans_bound_box = generate_bounding_box(thread_trans)
+    thread_trans_bound_box = o3d.geometry.LineSet.get_oriented_bounding_box(thread_trans)
     origin = create_geometry_at_points([(0, 0, 0), (0, 0, 1), (0, 1, 0), (1, 0, 0)])
+
+    # pdb.set_trace()
+    meat_clusters, key_spheres = KNN_play(args, pcd, thread_trans)
     
     # reconstuct meat mesh and export obj file
     meat_small = o3d.geometry.PointCloud.random_down_sample(pcd, 0.01)
@@ -241,13 +234,14 @@ if __name__ == '__main__':
 
 
     visualize_point_cloud([
-                        #    thread,
-                        #    thread_trans,
+                           thread,
+                           thread_trans,
                         #    pcd,
                         #    highlights,
                            origin,
                            meat_bound_box, 
                            meat_clusters,
-                        #    thread_bound_box,
-                        #    thread_trans_bound_box,
+                           key_spheres,
+                           thread_bound_box,
+                           thread_trans_bound_box,
                            ])
