@@ -40,11 +40,12 @@ if __name__ == '__main__':
     Constraints.add_meat(args.npy_file, args.png_file , args.meat_mask_file)
     Constraints.add_thread(args.thread)
     Constraints.meat, Constraints.spheres_one = Constraints.KNN_play(Constraints.meat, Constraints.thread)
-    meat_neighborhoods, thread_points = Constraints.KNN_neighborhoods(Constraints.meat, Constraints.thread)
+    meat_neighborhoods, _, thread_points = Constraints.KNN_neighborhoods(Constraints.meat, Constraints.thread)
     # pdb.set_trace()
 
-    dis = Constraints.norm_of_neighborhoods(meat_neighborhoods, thread_points)
-    print("distance between meat and thread nodes", dis)
+    # dis = Constraints.norm_of_neighborhoods(meat_neighborhoods, thread_points)
+    # print("distance between meat and thread nodes", dis)
+    Constraints.slsqp_solver(Constraints.meat, Constraints.thread)
 
 
     objects = [Constraints.spheres_one]
@@ -53,14 +54,15 @@ if __name__ == '__main__':
     Constraints.thread_trans = Constraints.align_objects(Constraints.meat, Constraints.thread, Constraints.meat_bound.center, Constraints.thread_bound.center)
     Constraints.meat, Constraints.spheres_two = Constraints.KNN_play(Constraints.meat, Constraints.thread_trans)
 
-    meat_neighborhoods, thread_points = Constraints.KNN_neighborhoods(Constraints.meat, Constraints.thread_trans)
+    meat_neighborhoods, _, thread_points = Constraints.KNN_neighborhoods(Constraints.meat, Constraints.thread_trans)
     # pdb.set_trace()
+    Constraints.slsqp_solver(Constraints.meat, Constraints.thread_trans)
 
-    dis_trans = Constraints.norm_of_neighborhoods(meat_neighborhoods, thread_points)
-    print("distance between meat and thread nodes after trans", dis_trans)
+    # dis_trans = Constraints.norm_of_neighborhoods(meat_neighborhoods, thread_points)
+    # print("distance between meat and thread nodes after trans", dis_trans)
 
-    print("dis norm: ", np.linalg.norm(dis))
-    print("dis_trans norm:",np.linalg.norm(dis_trans))
+    # print("dis norm: ", np.linalg.norm(dis))
+    # print("dis_trans norm:",np.linalg.norm(dis_trans))
     
     objects = [Constraints.spheres_one, Constraints.spheres_two, Constraints.thread_trans]
     Constraints.visualize_objects(objects)

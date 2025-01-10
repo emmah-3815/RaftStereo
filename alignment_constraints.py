@@ -231,18 +231,23 @@ class ReconstructAlign:
             blue = not blue
             color = red
         return pcd, spheres
+
     
     def KNN_neighborhoods(self, pcd, thread):
         key_points = thread.points
         pcd_tree = o3d.geometry.KDTreeFlann(pcd)
-        neighbors = 10
+        neighbors = 3
         pcd_neighbors = []
+        pcd_neighbors_normal = []
+        pcd_idx = []
         for point in key_points:
             [k, idx, _] = pcd_tree.search_knn_vector_3d(point, neighbors)
             pcd_neighbors.append(np.asarray(pcd.points)[idx, :])
+            pcd_neighbors_normal.append(np.asarray(pcd.normals)[idx,:])
+            pcd_idx.append(idx)
 
         # print(pcd_neighbors)
-        return pcd_neighbors, key_points
+        return pcd_neighbors, pcd_neighbors_normal, key_points
 
     def norm_of_neighborhoods(self, pcd_neighbors, thread_points):
         dis = []
@@ -253,6 +258,61 @@ class ReconstructAlign:
             dis.append(norm)
 
         return dis
+
+    def thread_transformation_func(self, x, pcd, thread):
+        # x is translation upon the origin and rotation based on an axis angle method
+        pcd_neighbors_og, pcd_neighbors_n_og, key_points_og = self.KNN_neighborhoods(pcd, thread)
+        R = o3d.geometry.get_rotation_matrix_from_axis_angle(x[3:])
+        T = x[:3]
+        thread_translate = thread.translate(T)
+        thread_transform = thread_translate.rotate(R, center=(0, 0, 0))
+        pcd_neighbors_trans, pcd_neighbors_n_trans, key_points_trans = self.KNN_neighborhoods(pcd, thread_transform)
+
+        dis = self.norm_of_neighborhoods(pcd_neighbors_trans, key_points_trans)
+        dis_sum = np.sum(dis)
+        return dis_sum
+    
+    def thread_normal_const(self, x, pcd, thread): # checks if the thread is above meat using normal vectors
+        R = o3d.geometry.get_rotation_matrix_from_axis_angle(x[3:])
+        T = x[:3]
+        thread_translate = thread.translate(T)
+        thread_transform = thread_translate.rotate(R, center=(0, 0, 0))
+        pcd_neighbors_trans, pcd_neighbors_n_trans, key_points_trans = self.KNN_neighborhoods(pcd, thread_transform)
+        pcd_normals = np.average(np.asarray(pcd_neighbors_n_trans), axis=1)
+        thread_knn_normals = np.asarray(key_points_trans) - np.average(np.asarray(pcd_neighbors_trans), axis=1) # thread nodes to its nearist point vector
+
+        thread_ontop_pcd_eq = 1 - np.sum(np.sign(np.diag(np.dot(pcd_normals, thread_knn_normals.T)))) / np.asarray(key_points_trans).shape[0] # number of key points
+
+        return thread_ontop_pcd_eq
+        
+    
+
+    def slsqp_solver(self, pcd, thread):
+        # objective function is to minimize the distance between the thread nodes and their knn neighbors on the meat, 
+        # with the input to the objective function being the transformation parameters, and output being the distance 
+
+        from scipy.optimize import Bounds
+        from scipy.optimize import minimize
+
+        bounds = Bounds([None, None], [None, None], [None, None], [None, None], [None, None], [None, None],)
+
+        # obj_func = self.thread_transformation_func(x, pcd, thread) # minimize distance/maximize contact
+        # normal_const = self.thread_normal_const(x, pcd, thread) # keep thread above meat
+
+        eq_cons = {'type': 'ineq',
+                   'fun' : lambda x: self.thread_transformation_func(x, pcd, thread)}
+        
+        ineq_cons = {'type' : 'eq',
+                      'fun' : lambda x: self.thread_normal_const(x, pcd, thread)}
+        
+        x0 = np.array([0, 0, 0, 0, 0, 0])
+        res = minimize(ineq_cons, x0, method='SLSQP',
+                    constraints=[eq_cons,], options={'ftol': 1e-9, 'disp': True},
+                    bounds=bounds)
+
+        print("slsqp results", res.x)
+        return res.x
+
 
     # def thread_top_meat_constraint(self, pcb, thread_points, alignment):
 
