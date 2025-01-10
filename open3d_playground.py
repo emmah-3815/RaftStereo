@@ -11,10 +11,15 @@ import open3d as o3d
 import copy
 
 
-# camera parameters
-fx, fy, cx1, cy = 882.996114514, 882.996114514, 445.06146749, 190.24049547
-cx2 = 445.061467
-baseline = 5.8513759749420302 # mm
+# # camera parameters on rectified images
+# fx, fy, cx1, cy = 882.996114514, 882.996114514, 445.06146749, 190.24049547
+# cx2 = 445.061467
+# baseline = 5.8513759749420302 # mm
+
+# camera parameters on non-rectified images
+fx, fy, cx1, cy = 1.6796e+03, 1.6681e+03, 839.1909, 496.6793
+cx2 = 1.0265e+03 # camera right? x position
+baseline = 6.6411 # mm, distance between cameras
 
 def visualize_point_cloud(objects):
     # Create a visualization object and window
@@ -198,7 +203,7 @@ if __name__ == '__main__':
     # parser.add_argument('--output_directory', help="directory to save output", default="demo_output")
     parser.add_argument('--npy_file', help="path_to_npy_file", default="/media/emmah/PortableSSD/Arclab_data/trial_9_data/trial_9_RAFT_output_1/frame_000001.npy")
     parser.add_argument('--png_file', help="path_to_png_file_for_visualization", default="/media/emmah/PortableSSD/Arclab_data/trial_9_data/trial_9_left_rgb/frame_000001.png")
-    parser.add_argument('--meat_mask_file', help="path_to_meat_mask", default="/media/emmah/PortableSSD/Arclab_data/trial_9_data/trial_9_single_arm_no_tension_masks_meat_left/trial_9_single_arm_no_tension_masks_meat/frame0001.png")
+    parser.add_argument('--meat_mask_file', help="path_to_meat_mask") # "/media/emmah/PortableSSD/Arclab_data/trial_9_data/trial_9_single_arm_no_tension_masks_meat_left/trial_9_single_arm_no_tension_masks_meat/frame0001.png"
     parser.add_argument('--thread', help='path to thread array data', default='/media/emmah/PortableSSD/Arclab_data/paper_singular_needle/frame_000000.npy')
     parser.add_argument('--mask_erode', help='choose to erode mask for less chance of flying points', default=True)
 
@@ -234,14 +239,25 @@ if __name__ == '__main__':
 
 
     visualize_point_cloud([
-                           thread,
-                           thread_trans,
-                        #    pcd,
+                        #    thread,
+                        #    thread_trans,
+                           pcd,
                         #    highlights,
                            origin,
                            meat_bound_box, 
                            meat_clusters,
-                           key_spheres,
-                           thread_bound_box,
-                           thread_trans_bound_box,
+                        #    key_spheres,
+                        #    thread_bound_box,
+                        #    thread_trans_bound_box,
                            ])
+
+
+# trial 8 command
+'''
+ python open3d_playground.py     --png_file=/media/emmah/PortableSSD/Arclab_data/trial_8/trial_8_left_rgb/trial_8_left_000243.png --npy_file=/media/emmah/PortableSSD/Arclab_data/trial_8/trial_8_raft_output/trial_8_left_000243.npy --meat_mask_file=/media/emmah/PortableSSD/Arclab_data/trial_8/trial_8_masks_meat_left/frame0243.png
+ '''
+
+# trial 7 command
+'''
+python open3d_playground.py     --png_file=/media/emmah/PortableSSD/Arclab_data/trial_7/trial_7_left_rgb/trial_7_left_000001.png --npy_file=/media/emmah/PortableSSD/Arclab_data/trial_7/trial_7_raft_output/trial_7_left_000001.npy --meat_mask_file=/media/emmah/PortableSSD/Arclab_data/trial_7/trial_7_masks_meat_left/frame0001.png
+'''

@@ -6,10 +6,19 @@ import pdb
 
 Constraints = ReconstructAlign()
 
-# camera parameters
-fx, fy, cx1, cy = 882.996114514, 882.996114514, 445.06146749, 190.24049547
-cx2 = 445.061467
-baseline = 5.8513759749420302 # mm
+def camera_params(rect=True):
+    if rect==True:
+        # camera parameters on rectified images
+        fx, fy, cx1, cy = 882.996114514, 882.996114514, 445.06146749, 190.24049547
+        cx2 = 445.061467
+        baseline = 5.8513759749420302 # mm
+
+    else:
+        # camera parameters on non-rectified images
+        fx, fy, cx1, cy = 1.6796e+03, 1.6681e+03, 839.1909, 496.6793
+        cx2 = 1.0265e+03
+        baseline = 6.6411 # mm
+    return fx, fy, cx1, cy, cx2, baseline
 
 
 
@@ -21,12 +30,14 @@ if __name__ == '__main__':
     parser.add_argument('--meat_mask_file', help="path_to_meat_mask", default="/media/emmah/PortableSSD/Arclab_data/trial_9_data/trial_9_single_arm_no_tension_masks_meat_left/trial_9_single_arm_no_tension_masks_meat/frame0001.png")
     parser.add_argument('--thread', help='path to thread array data', default='/media/emmah/PortableSSD/Arclab_data/paper_singular_needle/frame_000000.npy')
     parser.add_argument('--mask_erode', help='choose to erode mask for less chance of flying points', default=True)
+    parser.add_argument('--rect_img', help="non-rectified images are 1080 by 1920, rectified are 480 by 640", default=True)
+
 
     args = parser.parse_args()
 
-    Constraints.init_camera_params([fx, fy, cx1, cy], cx2, baseline)
+    Constraints.init_camera_params(camera_params(rect=args.rect_img))
     Constraints.init_object_params(args.mask_erode)
-    Constraints.add_meat(args.npy_file, args.png_file, args.meat_mask_file)
+    Constraints.add_meat(args.npy_file, args.png_file , args.meat_mask_file)
     Constraints.add_thread(args.thread)
     Constraints.meat, Constraints.spheres_one = Constraints.KNN_play(Constraints.meat, Constraints.thread)
     meat_neighborhoods, thread_points = Constraints.KNN_neighborhoods(Constraints.meat, Constraints.thread)

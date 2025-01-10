@@ -3,7 +3,7 @@ import open3d as o3d
 from imageio.v3 import imread
 import cv2 as cv
 import copy
-
+import pdb
 
 
 
@@ -31,11 +31,12 @@ class ReconstructAlign:
         self.t_m_contact = None
         self.vis_objects = []
 
-    def init_camera_params(self, param, cx2, baseline) -> None:
+    def init_camera_params(self, params) -> None:
+        # params = fx, fy, cx1, cy, cx2, baseline
         # camera parameters
-        self.fx, self.fy, self.cx1, self.cy = param[0], param[1], param[2], param[3]
-        self.cx2 = cx2
-        self.baseline = baseline
+        self.fx, self.fy, self.cx1, self.cy = params[0], params[1], params[2], params[3]
+        self.cx2 = params[4]
+        self.baseline = params[5]
 
     def init_object_params(self, mask_erode=True) -> None:
         self.mask_erode = mask_erode # meat mask erode
@@ -95,7 +96,11 @@ class ReconstructAlign:
 
 
         # mask meat only
-        if meat_mask_file is not None:
+
+        if meat_mask_file == "None":
+            meat_mask_file = None
+
+        if meat_mask_file != None:
             meat_mask = imread(meat_mask_file)
             if self.mask_erode is True:
                 kernel = np.ones((5,5),np.uint8)
@@ -203,14 +208,14 @@ class ReconstructAlign:
         
         close_pts = (np.linalg.norm(p1 - p2, axis=2) < radius).nonzero()
 
-    def KNN_play(self, primary, secondary): # pcd and thread as o3d.geometry objects
+    def KNN_play(self, pcd, thread): # pcd and thread as o3d.geometry objects
         ## KNN search 200(neighbors) closest points on pcd with respect to each node on thread
         color = 0
         red = 0
         blue = 1
-        neighbors = 200    
-        pcd = primary
-        key_points = secondary.points
+        neighbors = 3
+        pcd = pcd
+        key_points = thread.points
         pcd_tree = o3d.geometry.KDTreeFlann(pcd)
         spheres = o3d.geometry.TriangleMesh()
         for point in key_points:
@@ -225,30 +230,41 @@ class ReconstructAlign:
             red = not red
             blue = not blue
             color = red
-        return primary, spheres
+        return pcd, spheres
     
-    def KNN_neighborhoods(self, primary, secondary):
-        key_points = secondary.points
-        pcd_tree = o3d.geometry.KDTreeFlann(primary)
+    def KNN_neighborhoods(self, pcd, thread):
+        key_points = thread.points
+        pcd_tree = o3d.geometry.KDTreeFlann(pcd)
         neighbors = 10
         pcd_neighbors = []
         for point in key_points:
             [k, idx, _] = pcd_tree.search_knn_vector_3d(point, neighbors)
-            pcd_neighbors.append(np.asarray(primary.points)[idx, :])
+            pcd_neighbors.append(np.asarray(pcd.points)[idx, :])
 
         # print(pcd_neighbors)
         return pcd_neighbors, key_points
 
-    def norm_of_neighborhoods(self, pcd_neighbors, key_points):
+    def norm_of_neighborhoods(self, pcd_neighbors, thread_points):
         dis = []
-        for i in range(len(np.asarray(key_points))):
-            p1 = np.array(key_points[i])[:, np.newaxis,  np.newaxis]
+        for i in range(len(np.asarray(thread_points))):
+            p1 = np.array(thread_points[i])[:, np.newaxis,  np.newaxis]
             p2 = np.array(pcd_neighbors[i])[np.newaxis, :, :]
             norm = (np.linalg.norm(p1 - p2, axis=2))
             dis.append(norm)
 
         return dis
 
+    # def thread_top_meat_constraint(self, pcb, thread_points, alignment):
+
+    #     N = [] # normal vectors of meat closest to the thread nodes
+    #     x = [] # thread nodes 
+    #     x_align = alignment(x)
+    #     eq_cons = {'type' : 'eq',
+    #                'fun' : lambda x: np.array([np.sign(np.dot(N.T, alignment(x)))-1]),
+    #                'jac' : lambda x: np.array([[alignment(x)]])}
+    #     return eq_cons
+    
+    # def thread_form_constraint(self, pcb, thread_points, alignment):
 
 
 
