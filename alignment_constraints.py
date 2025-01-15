@@ -147,7 +147,7 @@ class ReconstructAlign:
         tx,ty= first_center[:2] - second_center[:2]
         # translation = [tx, ty, -tz]
         translation = [tx, ty, tz]
-        # print("translation", translation)
+        print("translation", translation)
 
         transformed_second = copy.deepcopy(second).translate(translation)
 
@@ -236,7 +236,7 @@ class ReconstructAlign:
     def KNN_neighborhoods(self, pcd, thread):
         key_points = thread.points
         pcd_tree = o3d.geometry.KDTreeFlann(pcd)
-        neighbors = 3
+        neighbors = 1
         pcd_neighbors = []
         pcd_neighbors_normal = []
         pcd_idx = []
@@ -258,8 +258,21 @@ class ReconstructAlign:
             dis.append(norm)
 
         return dis
+    def norm_of_thread_to_neighbors(self, pcd_neighbors, thread_points):
+        # computes the distance of each thread point to its respective pcd_neighbor, takes the average when pcd_neighbor contains more than one point (k>1)
+        dis = np.mean(np.mean(np.absolute(np.array(thread_points)[:, np.newaxis] - np.array(pcd_neighbors)), axis=2), axis=1)
+    
+        return dis
 
-    def thread_transformation_func(self, x, pcd, thread):
+    def thread_transform(self, x, pcd, thread):
+        R = o3d.geometry.get_rotation_matrix_from_axis_angle(x[3:])
+        T = x[:3]
+        thread_translate = thread.translate(T)
+        thread_transform = thread_translate.rotate(R, center=(0, 0, 0))
+        return thread_transform
+
+
+    def thread_transformation_dis(self, x, pcd, thread):
         # x is translation upon the origin and rotation based on an axis angle method
         pcd_neighbors_og, pcd_neighbors_n_og, key_points_og = self.KNN_neighborhoods(pcd, thread)
         R = o3d.geometry.get_rotation_matrix_from_axis_angle(x[3:])
@@ -268,7 +281,7 @@ class ReconstructAlign:
         thread_transform = thread_translate.rotate(R, center=(0, 0, 0))
         pcd_neighbors_trans, pcd_neighbors_n_trans, key_points_trans = self.KNN_neighborhoods(pcd, thread_transform)
 
-        dis = self.norm_of_neighborhoods(pcd_neighbors_trans, key_points_trans)
+        dis = self.norm_of_thread_to_neighbors(pcd_neighbors_trans, key_points_trans)
         dis_sum = np.sum(dis)
         return dis_sum
     
@@ -294,25 +307,25 @@ class ReconstructAlign:
         from scipy.optimize import Bounds
         from scipy.optimize import minimize
 
-        bounds = Bounds([None, None], [None, None], [None, None], [None, None], [None, None], [None, None],)
+        bounds = ((0, None), (0, None), (0, None), (0, None), (0, None), (0, None))
 
         # obj_func = self.thread_transformation_func(x, pcd, thread) # minimize distance/maximize contact
         # normal_const = self.thread_normal_const(x, pcd, thread) # keep thread above meat
 
-        eq_cons = {'type': 'ineq',
-                   'fun' : lambda x: self.thread_transformation_func(x, pcd, thread)}
+        ineq_cons = {'type': 'ineq',
+                   'fun' : lambda x: self.thread_transformation_dis(x, pcd, thread)}
         
-        ineq_cons = {'type' : 'eq',
-                      'fun' : lambda x: self.thread_normal_const(x, pcd, thread)}
+        # ineq_cons = {'type' : 'eq',
+        #               'fun' : lambda x: self.thread_normal_const(x, pcd, thread)}
+        eq_cons = lambda x: self.thread_normal_const(x, pcd, thread)
         
         x0 = np.array([0, 0, 0, 0, 0, 0])
-        res = minimize(ineq_cons, x0, method='SLSQP',
-                    constraints=[eq_cons,], options={'ftol': 1e-9, 'disp': True},
+        res = minimize(self.thread_transformation_dis, x0, method='SLSQP', args=(pcd, thread),
+                    constraints=[eq_cons], options={'ftol': 1e-9, 'disp': True},
                     bounds=bounds)
 
         print("slsqp results", res.x)
         return res.x
-
 
     # def thread_top_meat_constraint(self, pcb, thread_points, alignment):
 

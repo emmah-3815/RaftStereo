@@ -45,19 +45,37 @@ if __name__ == '__main__':
 
     # dis = Constraints.norm_of_neighborhoods(meat_neighborhoods, thread_points)
     # print("distance between meat and thread nodes", dis)
-    Constraints.slsqp_solver(Constraints.meat, Constraints.thread)
-
-
+    
+    change = [0, 0, 0, 0, 0, 0]
+    print(f"original distance is {Constraints.thread_transformation_dis(change, Constraints.meat, Constraints.thread)}")
     objects = [Constraints.spheres_one]
     Constraints.visualize_objects(objects)
 
-    Constraints.thread_trans = Constraints.align_objects(Constraints.meat, Constraints.thread, Constraints.meat_bound.center, Constraints.thread_bound.center)
+    # Constraints.thread_trans = Constraints.align_objects(Constraints.meat, Constraints.thread, Constraints.meat_bound.center, Constraints.thread_bound.center)
+    # Constraints.meat, Constraints.spheres_two = Constraints.KNN_play(Constraints.meat, Constraints.thread_trans)
+
+    # meat_neighborhoods, _, thread_points = Constraints.KNN_neighborhoods(Constraints.meat, Constraints.thread_trans)
+    # pdb.set_trace()
+
+    # slsqp optimization
+    change = Constraints.slsqp_solver(Constraints.meat, Constraints.thread)
+    Constraints.thread_trans = Constraints.thread_transform(change, Constraints.meat, Constraints.thread)
+    print(f"after moving {change}, distance is {Constraints.thread_transformation_dis(change, Constraints.meat, Constraints.thread)}")
     Constraints.meat, Constraints.spheres_two = Constraints.KNN_play(Constraints.meat, Constraints.thread_trans)
 
-    meat_neighborhoods, _, thread_points = Constraints.KNN_neighborhoods(Constraints.meat, Constraints.thread_trans)
-    # pdb.set_trace()
-    Constraints.slsqp_solver(Constraints.meat, Constraints.thread_trans)
 
+
+    # transform test + distance calc test
+    # change = [x, y, z, rz, ry, rz] confirmed moves the thread approprately 
+    # and calculates thread node to neighbor avg distance
+    # change = [-10.43597845298734, 4.913627692600272, -2.169965977054915, 0, 0, 0]
+    # change = [-30, 14, -11, 0, 0, 0]
+    # Constraints.thread_trans = Constraints.thread_transform(change, Constraints.meat, Constraints.thread)
+    # print(f"after moving {change}, distance is {Constraints.thread_transformation_dis(change, Constraints.meat, Constraints.thread)}")
+    # Constraints.meat, Constraints.spheres_two = Constraints.KNN_play(Constraints.meat, Constraints.thread_trans)
+
+
+    # calculate distance of meat and thread
     # dis_trans = Constraints.norm_of_neighborhoods(meat_neighborhoods, thread_points)
     # print("distance between meat and thread nodes after trans", dis_trans)
 
@@ -66,7 +84,6 @@ if __name__ == '__main__':
     
     objects = [Constraints.spheres_one, Constraints.spheres_two, Constraints.thread_trans]
     Constraints.visualize_objects(objects)
-
 
 
 
