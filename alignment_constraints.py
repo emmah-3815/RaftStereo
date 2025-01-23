@@ -4,6 +4,7 @@ from imageio.v3 import imread
 import cv2 as cv
 import copy
 import pdb
+from scipy.optimize import Bounds, minimize
 
 
 
@@ -264,37 +265,43 @@ class ReconstructAlign:
     
         return dis
 
-    def thread_transform(self, x, pcd, thread):
+    def thread_transform(self, x, pcd, thread_input):
+        thread = copy.copy(thread_input)
+        R_center = self.generate_bounding_box(thread).center
         R = o3d.geometry.get_rotation_matrix_from_axis_angle(x[3:])
         T = x[:3]
         thread_translate = thread.translate(T)
-        thread_transform = thread_translate.rotate(R, center=(0, 0, 0))
+        thread_transform = thread_translate.rotate(R, center=R_center)
         return thread_transform
 
 
-    def thread_transformation_dis(self, x, pcd, thread):
+    def thread_transformation_dis(self, x, pcd, thread_input):
         # x is translation upon the origin and rotation based on an axis angle method
+        thread = copy.copy(thread_input)
         pcd_neighbors_og, pcd_neighbors_n_og, key_points_og = self.KNN_neighborhoods(pcd, thread)
+        R_center = self.generate_bounding_box(thread).center
         R = o3d.geometry.get_rotation_matrix_from_axis_angle(x[3:])
         T = x[:3]
         thread_translate = thread.translate(T)
-        thread_transform = thread_translate.rotate(R, center=(0, 0, 0))
+        thread_transform = thread_translate.rotate(R, center=R_center)
         pcd_neighbors_trans, pcd_neighbors_n_trans, key_points_trans = self.KNN_neighborhoods(pcd, thread_transform)
 
         dis = self.norm_of_thread_to_neighbors(pcd_neighbors_trans, key_points_trans)
         dis_sum = np.sum(dis)
         return dis_sum
     
-    def thread_normal_const(self, x, pcd, thread): # checks if the thread is above meat using normal vectors
+    def thread_normal_const(self, x, pcd, thread_input): # checks if the thread is above meat using normal vectors
+        thread = copy.copy(thread_input)
+        R_center = self.generate_bounding_box(thread).center
         R = o3d.geometry.get_rotation_matrix_from_axis_angle(x[3:])
         T = x[:3]
         thread_translate = thread.translate(T)
-        thread_transform = thread_translate.rotate(R, center=(0, 0, 0))
+        thread_transform = thread_translate.rotate(R, center=R_center)
         pcd_neighbors_trans, pcd_neighbors_n_trans, key_points_trans = self.KNN_neighborhoods(pcd, thread_transform)
         pcd_normals = np.average(np.asarray(pcd_neighbors_n_trans), axis=1)
         thread_knn_normals = np.asarray(key_points_trans) - np.average(np.asarray(pcd_neighbors_trans), axis=1) # thread nodes to its nearist point vector
 
-        thread_ontop_pcd_eq = 1 - np.sum(np.sign(np.diag(np.dot(pcd_normals, thread_knn_normals.T)))) / np.asarray(key_points_trans).shape[0] # number of key points
+        thread_ontop_pcd_eq = np.sum(np.sign(np.diag(np.dot(pcd_normals, thread_knn_normals.T)))) / np.asarray(key_points_trans).shape[0] - 1 # number of key points
 
         return thread_ontop_pcd_eq
         
@@ -303,25 +310,16 @@ class ReconstructAlign:
     def slsqp_solver(self, pcd, thread):
         # objective function is to minimize the distance between the thread nodes and their knn neighbors on the meat, 
         # with the input to the objective function being the transformation parameters, and output being the distance 
+        # closest manual value -60 10 20 0.9 0 0 (x, y, z, rx, ry, rz)
 
-        from scipy.optimize import Bounds
-        from scipy.optimize import minimize
-
-        bounds = ((0, None), (0, None), (0, None), (0, None), (0, None), (0, None))
-
-        # obj_func = self.thread_transformation_func(x, pcd, thread) # minimize distance/maximize contact
-        # normal_const = self.thread_normal_const(x, pcd, thread) # keep thread above meat
-
-        ineq_cons = {'type': 'ineq',
-                   'fun' : lambda x: self.thread_transformation_dis(x, pcd, thread)}
-        
-        # ineq_cons = {'type' : 'eq',
-        #               'fun' : lambda x: self.thread_normal_const(x, pcd, thread)}
-        eq_cons = lambda x: self.thread_normal_const(x, pcd, thread)
+        # bounds = ((0, None), (0, None), (0, None), (0, None), (0, None), (0, None))
+        bounds = ((-1000, 1000), (-1000, 1000), (-1000, 1000), (-3.15, 3.15), (-3.15, 3.15), (-3.15, 3.15))
+       
+        # eq_cons = {'type': 'eq', 'fun' : self.thread_normal_const, 'args': (pcd, thread)}
         
         x0 = np.array([0, 0, 0, 0, 0, 0])
         res = minimize(self.thread_transformation_dis, x0, method='SLSQP', args=(pcd, thread),
-                    constraints=[eq_cons], options={'ftol': 1e-9, 'disp': True},
+                    options={'ftol': 1e-9, 'disp': True}, # constraints=[eq_cons],
                     bounds=bounds)
 
         print("slsqp results", res.x)
@@ -356,6 +354,8 @@ class ReconstructAlign:
         # Create a visualization object and window
         vis = o3d.visualization.Visualizer()
         vis.create_window()
+        opt = vis.get_render_option()
+
         self.vis_objects = objects
         if self.thread_init == True: self.vis_objects.append(self.thread)
         if self.meat_init == True: self.vis_objects.append(self.meat) 
@@ -370,6 +370,9 @@ class ReconstructAlign:
             # if o3d.geometry.Geometry.get_geometry_type(object).value == 1: # type point cloud is 1
             #     object = o3d.geometry.PointCloud.random_down_sample(object, 0.3)
             vis.add_geometry(object)
+        
+        opt.show_coordinate_frame = True
+        # red is x, green is y, blue is z
         vis.run()
 
 

@@ -62,6 +62,25 @@ if __name__ == '__main__':
     Constraints.thread_trans = Constraints.thread_transform(change, Constraints.meat, Constraints.thread)
     print(f"after moving {change}, distance is {Constraints.thread_transformation_dis(change, Constraints.meat, Constraints.thread)}")
     Constraints.meat, Constraints.spheres_two = Constraints.KNN_play(Constraints.meat, Constraints.thread_trans)
+    
+    # manual translation and rotation
+    '''
+    user = None
+    Constraints.thread_old = Constraints.thread
+    while user != 's':
+        user = input("input change separated by spaces ").split()
+        if len(user) != 6:
+            continue
+        change = np.array(user)
+        Constraints.thread_trans = Constraints.thread_transform(change, Constraints.meat, Constraints.thread)
+        print(f"after moving {change}, distance is {Constraints.thread_transformation_dis(change, Constraints.meat, Constraints.thread)}")
+        Constraints.meat, Constraints.spheres_two = Constraints.KNN_play(Constraints.meat, Constraints.thread_trans)
+        objects = [Constraints.spheres_one, Constraints.spheres_two, Constraints.thread_trans, Constraints.thread_old]
+        Constraints.visualize_objects(objects)
+        Constraints.thread_old = Constraints.thread_trans
+    '''
+
+
 
 
 
