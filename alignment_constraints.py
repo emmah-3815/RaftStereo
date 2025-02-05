@@ -248,7 +248,7 @@ class ReconstructAlign:
             pcd_idx.append(idx)
 
         # print(pcd_neighbors)
-        return pcd_neighbors, pcd_neighbors_normal, key_points
+        return np.asarray(pcd_neighbors), np.asarray(pcd_neighbors_normal), np.asarray(key_points)
 
     def norm_of_neighborhoods(self, pcd_neighbors, thread_points):
         dis = []
@@ -298,13 +298,53 @@ class ReconstructAlign:
         thread_translate = thread.translate(T)
         thread_transform = thread_translate.rotate(R, center=R_center)
         pcd_neighbors_trans, pcd_neighbors_n_trans, key_points_trans = self.KNN_neighborhoods(pcd, thread_transform)
-        pcd_normals = np.average(np.asarray(pcd_neighbors_n_trans), axis=1)
-        thread_knn_normals = np.asarray(key_points_trans) - np.average(np.asarray(pcd_neighbors_trans), axis=1) # thread nodes to its nearist point vector
+        pcd_normals = np.average(pcd_neighbors_n_trans, axis=1)
+        thread_knn_normals = np.average(pcd_neighbors_trans, axis=1) - key_points_trans # thread nodes to its nearest point vector
 
-        thread_ontop_pcd_eq = np.sum(np.sign(np.diag(np.dot(pcd_normals, thread_knn_normals.T)))) / np.asarray(key_points_trans).shape[0] - 1 # number of key points
+        def sigmoid(x):
+            return 1/(1+np.exp(-x))
 
-        return thread_ontop_pcd_eq
+        # normals_ontop = np.tanh(np.diag(np.dot(pcd_normals, thread_knn_normals.T))) # tanh cuts in even more
+        normals_ontop = np.diag(np.dot(pcd_normals, thread_knn_normals.T))
+        # signs = np.sign(normals_ontop) # sign, non-differentiable, works if constraint is ineq
+        signs = sigmoid(normals_ontop) - 0.5 # sigmoid 
+        # addition = normals_ontop*(normals_ontop < 0) * 10
+        # ontop = np.add(normals_ontop, addition)
+        # sum_normals = np.mean(normals_ontop - ontop)
+
+        sum_normals = np.mean(signs)
+
+
+
+        return sum_normals
         
+    def thread_normal_calcs(self, x, pcd, thread_input): # checks if the thread is above meat using normal vectors
+        thread = copy.copy(thread_input)
+        R_center = self.generate_bounding_box(thread).center
+        R = o3d.geometry.get_rotation_matrix_from_axis_angle(x[3:])
+        T = x[:3]
+        thread_translate = thread.translate(T)
+        thread_transform = thread_translate.rotate(R, center=R_center)
+        pcd_neighbors_trans, pcd_neighbors_n_trans, key_points_trans = self.KNN_neighborhoods(pcd, thread_transform)
+        pcd_normals = np.average(pcd_neighbors_n_trans, axis=1)
+        thread_knn_normals = np.average(pcd_neighbors_trans, axis=1) - key_points_trans # thread nodes to its nearest point vector
+
+        def sigmoid(x):
+            return 1/(1+np.exp(-x))
+
+        # normals_ontop = np.tanh(np.diag(np.dot(pcd_normals, thread_knn_normals.T))) # tanh cuts in even more
+        normals_ontop = np.diag(np.dot(pcd_normals, thread_knn_normals.T))
+        # signs = np.sign(normals_ontop) # sign, non-differentiable, works if constraint is ineq
+        signs = sigmoid(normals_ontop) - 0.5 # sigmoid 
+        # addition = normals_ontop*(normals_ontop < 0) * 10
+        # ontop = np.add(normals_ontop, addition)
+        # sum_normals = np.mean(normals_ontop - ontop)
+
+        sum_normals = np.mean(signs)
+        normals = signs
+
+        return sum_normals, normals
+
     
 
     def slsqp_solver(self, pcd, thread):
@@ -315,14 +355,15 @@ class ReconstructAlign:
         # bounds = ((0, None), (0, None), (0, None), (0, None), (0, None), (0, None))
         bounds = ((-1000, 1000), (-1000, 1000), (-1000, 1000), (-3.15, 3.15), (-3.15, 3.15), (-3.15, 3.15))
        
-        # eq_cons = {'type': 'eq', 'fun' : self.thread_normal_const, 'args': (pcd, thread)}
+        eq_cons = {'type': 'eq', 'fun' : self.thread_normal_const, 'args': (pcd, thread)}
         
-        x0 = np.array([0, 0, 0, 0, 0, 0])
+        x0 = np.random.rand(6)
         res = minimize(self.thread_transformation_dis, x0, method='SLSQP', args=(pcd, thread),
-                    options={'ftol': 1e-9, 'disp': True}, # constraints=[eq_cons],
+                    options={'ftol': 1e-9, 'disp': True, 'maxiter': 400}, constraints=[eq_cons],
                     bounds=bounds)
 
         print("slsqp results", res.x)
+        print("normal constraint results", self.thread_normal_calcs(res.x, pcd, thread))
         return res.x
 
     # def thread_top_meat_constraint(self, pcb, thread_points, alignment):
