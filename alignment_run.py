@@ -48,12 +48,13 @@ if __name__ == '__main__':
         Constraints.add_meat(npy_file, png_file , mask_file)
         Constraints.add_thread(thread_file)
     else:
-        # npy_file = "/media/emmah/PortableSSD/Arclab_data/trial_9_data/trial_9_RAFT_output_1/frame_000001.npy"
-        # png_file = "/media/emmah/PortableSSD/Arclab_data/trial_9_data/trial_9_left_rgb/frame_000001.png"
-        # mask_file = "/media/emmah/PortableSSD/Arclab_data/trial_9_data/trial_9_single_arm_no_tension_masks_meat_left/trial_9_single_arm_no_tension_masks_meat/frame0001.png"
-        # thread_file = '/media/emmah/PortableSSD/Arclab_data/paper_singular_needle/frame_000000.npy'
-        Constraints.add_meat(args.npy_file, args.png_file , args.meat_mask_file)
-        Constraints.add_thread(args.thread)
+        npy_file = args.npy_file if args.npy_file is not None else "/media/emmah/PortableSSD/Arclab_data/trial_9_data/trial_9_RAFT_output_1/frame_000001.npy"
+        png_file = args.png_file if args.png_file is not None else"/media/emmah/PortableSSD/Arclab_data/trial_9_data/trial_9_left_rgb/frame_000001.png"
+        mask_file = args.meat_mask_file if args.meat_mask_file is not None else"/media/emmah/PortableSSD/Arclab_data/trial_9_data/trial_9_single_arm_no_tension_masks_meat_left/trial_9_single_arm_no_tension_masks_meat/frame0001.png"
+        thread_file = args.thread if args.thread is not None else "/media/emmah/PortableSSD/Arclab_data/paper_singular_needle/frame_000000.npy"
+        # pdb.set_trace()
+        Constraints.add_meat(npy_file, png_file , mask_file)
+        Constraints.add_thread(thread_file)
 
     Constraints.meat, Constraints.spheres_one = Constraints.KNN_play(Constraints.meat, Constraints.thread)
     meat_neighborhoods, _, thread_points = Constraints.KNN_neighborhoods(Constraints.meat, Constraints.thread)

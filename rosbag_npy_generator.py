@@ -4,7 +4,7 @@ import pdb
 import cv2
 import numpy as np
 
-import rosbag   
+import ros2bag as rosbag   
 from sensor_msgs.msg import Image
 from cv_bridge import CvBridge, CvBridgeError
 

@@ -300,21 +300,33 @@ class ReconstructAlign:
         pcd_neighbors_trans, pcd_neighbors_n_trans, key_points_trans = self.KNN_neighborhoods(pcd, thread_transform)
         pcd_normals = np.average(pcd_neighbors_n_trans, axis=1)
         thread_knn_normals = np.average(pcd_neighbors_trans, axis=1) - key_points_trans # thread nodes to its nearest point vector
-
-        def sigmoid(x):
-            return 1/(1+np.exp(-x))
-
-        # normals_ontop = np.tanh(np.diag(np.dot(pcd_normals, thread_knn_normals.T))) # tanh cuts in even more
+        # array of meat to thread vectors
         normals_ontop = np.diag(np.dot(pcd_normals, thread_knn_normals.T))
-        # signs = np.sign(normals_ontop) # sign, non-differentiable, works if constraint is ineq
-        signs = sigmoid(normals_ontop) - 0.5 # sigmoid 
-        # addition = normals_ontop*(normals_ontop < 0) * 10
-        # ontop = np.add(normals_ontop, addition)
-        # sum_normals = np.mean(normals_ontop - ontop)
+
+
+        methods = ["sigmoid", "sign", "tanh"]
+        method = methods[2]
+        print(f"using alignment method {method}")
+
+        # sigmoid method
+        if method == "sigmoid":
+            def sigmoid(x):
+                return 1/(1+np.exp(-x))
+            signs = sigmoid(normals_ontop) - 0.5 # sigmoid 
+            # signs = signs < 0
+            sum_normals = np.mean(signs)
+
+        # sign method
+        elif method == "sign":
+            signs = np.sign(normals_ontop)
+            sum_normals = 1 - np.mean(signs)
+
+        # tanh method
+        elif method == "tanh":
+            signs = np.tanh(normals_ontop) # tanh cuts in even more
+            sum_normals = np.mean(signs)
 
         sum_normals = np.mean(signs)
-
-
 
         return sum_normals
         
@@ -329,19 +341,41 @@ class ReconstructAlign:
         pcd_normals = np.average(pcd_neighbors_n_trans, axis=1)
         thread_knn_normals = np.average(pcd_neighbors_trans, axis=1) - key_points_trans # thread nodes to its nearest point vector
 
-        def sigmoid(x):
-            return 1/(1+np.exp(-x))
-
-        # normals_ontop = np.tanh(np.diag(np.dot(pcd_normals, thread_knn_normals.T))) # tanh cuts in even more
+        # array of meat to thread vectors
         normals_ontop = np.diag(np.dot(pcd_normals, thread_knn_normals.T))
+
+
+        methods = ["sigmoid", "sign", "tanh"]
+        method = methods[0]
+
+        # sigmoid method
+        if method == "sigmoid":
+            def sigmoid(x):
+                return 1/(1+np.exp(-x))
+            signs = sigmoid(normals_ontop) - 0.5 # sigmoid 
+            # signs = signs < 0
+            sum_normals = np.mean(signs)
+            normals = signs
+
+        # sign method
+        elif method == "sign":
+            signs = np.sign(normals_ontop)
+            sum_normals = 1 - np.mean(signs)
+            normals = signs
+
+        # tanh method
+        elif method == "tanh":
+            signs = np.tanh(normals_ontop) # tanh cuts in even more
+            sum_normals = np.mean(signs)
+            normals = signs
+
+
+
         # signs = np.sign(normals_ontop) # sign, non-differentiable, works if constraint is ineq
-        signs = sigmoid(normals_ontop) - 0.5 # sigmoid 
         # addition = normals_ontop*(normals_ontop < 0) * 10
         # ontop = np.add(normals_ontop, addition)
         # sum_normals = np.mean(normals_ontop - ontop)
 
-        sum_normals = np.mean(signs)
-        normals = signs
 
         return sum_normals, normals
 
@@ -353,11 +387,11 @@ class ReconstructAlign:
         # closest manual value -60 10 20 0.9 0 0 (x, y, z, rx, ry, rz)
 
         # bounds = ((0, None), (0, None), (0, None), (0, None), (0, None), (0, None))
-        bounds = ((-1000, 1000), (-1000, 1000), (-1000, 1000), (-3.15, 3.15), (-3.15, 3.15), (-3.15, 3.15))
+        bounds = ((-100, 100), (-100, 1000), (-100, 100), (-np.pi/2, np.pi/2), (-np.pi/2, np.pi/2), (-np.pi/2, np.pi/2))
        
         eq_cons = {'type': 'eq', 'fun' : self.thread_normal_const, 'args': (pcd, thread)}
         
-        x0 = np.random.rand(6)
+        x0 = np.random.rand(6) * 10e-7  
         res = minimize(self.thread_transformation_dis, x0, method='SLSQP', args=(pcd, thread),
                     options={'ftol': 1e-9, 'disp': True, 'maxiter': 400}, constraints=[eq_cons],
                     bounds=bounds)
