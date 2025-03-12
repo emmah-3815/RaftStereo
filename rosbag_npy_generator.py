@@ -79,7 +79,64 @@ def generate_npy(args, left_img_dir, right_img_dir):
                 np.save(output_directory / f"{file_stem}.npy", flow_up.cpu().numpy().squeeze())
             plt.imsave(output_directory / f"{file_stem}.png", -flow_up.cpu().numpy().squeeze(), cmap='jet')
 
-def rosbag_extract(args):
+def ros2bag_extract(args):
+    from rosbags.highlevel import AnyReader
+    from pathlib import Path
+    import cv2
+    import csv
+    from rosidl_runtime_py.utilities import get_message
+    from rosbags.image import message_to_cvimage
+
+    left_image_dir = args.bag_file + "/left_rgb/"
+    if not os.path.isdir(left_image_dir):
+        os.makedirs(left_image_dir)
+    right_image_dir = args.bag_file + "/right_rgb/"
+    if not os.path.isdir(right_image_dir):
+        os.makedirs(right_image_dir)
+
+    if args.new != True:
+        print("using existing images in", left_image_dir, "and", right_image_dir)
+        return left_image_dir, right_image_dir
+
+    right_count = 0
+    left_count = 0
+    with AnyReader([Path(args.bag_file)]) as reader:
+        # topic and msgtype information is available on .connections list
+        for connection in reader.connections:
+            print(connection.topic, connection.msgtype)
+        for connection, timestamp, rawdata in reader.messages():
+            if connection.topic == args.topic_l: # topic Name of images
+                msg = reader.deserialize(rawdata, connection.msgtype)
+                cv_img = message_to_cvimage(msg, 'bgr8') # change encoding type if needed
+                cv2.imwrite(os.path.join(left_image_dir, args.output_name + "_%06i.png" % left_count), cv_img)
+                print ("Wrote left image %i" % left_count)
+                left_count += 1
+
+            elif connection.topic == args.topic_r: # topic Name of images
+                msg = reader.deserialize(rawdata, connection.msgtype)
+                cv_img = message_to_cvimage(msg, 'bgr8') # change encoding type if needed
+                cv2.imwrite(os.path.join(right_image_dir, args.output_name + "_%06i.png" % right_count), cv_img)
+                print ("Wrote right image %i" % right_count)
+                right_count += 1
+
+            elif connection.topic == '/stereo/rectified/P1':
+                output_file = args.bag_file + "/P1.csv"
+                # msg_class = get_message(connection.msgtype)
+
+                with open(output_file, mode='w', newline='') as file:
+                    writer = csv.writer(file)
+                    writer.writerow(['timestamp', 'data'])
+
+                    # Iterate through the messages and extract Float32MultiArray
+                    # topic, data, timestamp = reader.read_next()
+                    msg = reader.deserialize(rawdata, connection.msgtype)
+                    writer.writerow([timestamp, msg.data])
+
+
+    return left_image_dir, right_image_dir
+
+
+def ros1bag_extract(args):
 
     # args = parser.parse_args()
     # mypath = args.image_dir
@@ -176,6 +233,7 @@ if __name__ == '__main__':
     parser.add_argument("--topic_l", help="Left Image topic.")
     parser.add_argument("--topic_r", help="RIght Image topic.")
     parser.add_argument("--output_name", nargs='?', default="frame", help="Image name. (optional)")
+    parser.add_argument("--ros1", default=False, help="use ros 1 if true")
 
     parser.add_argument('--restore_ckpt', help="restore checkpoint", required=True)
     parser.add_argument('--save_numpy', action='store_true', help='save output as numpy arrays')
@@ -197,8 +255,16 @@ if __name__ == '__main__':
     DEVICE = 'cpu'
 
     args = parser.parse_args()
+    args.topic_l = '/stereo/left/rectified_downscaled_image'
+    args.topic_r = '/stereo/right/rectified_downscaled_image'
 
-    left_dir, right_dir = rosbag_extract(args)
+    if args.ros1 == True:
+        left_dir, right_dir = ros1bag_extract(args)
+
+    else:
+        args.image_dir = args.bag_file if args.image_dir is None else args.image_dir
+        left_dir, right_dir = ros2bag_extract(args)
+
     generate_npy(args, left_dir, right_dir)
 
 
