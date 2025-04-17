@@ -28,10 +28,11 @@ if __name__ == '__main__':
     parser.add_argument('--npy_file', help="path_to_npy_file") # , default="/media/emmah/PortableSSD/Arclab_data/trial_9_data/trial_9_RAFT_output_1/frame_000001.npy")
     parser.add_argument('--png_file', help="path_to_png_file_for_visualization") # , default="/media/emmah/PortableSSD/Arclab_data/trial_9_data/trial_9_left_rgb/frame_000001.png")
     parser.add_argument('--meat_mask_file', help="path_to_meat_mask") # , default="/media/emmah/PortableSSD/Arclab_data/trial_9_data/trial_9_single_arm_no_tension_masks_meat_left/trial_9_single_arm_no_tension_masks_meat/frame0001.png")
+    parser.add_argument('--use_default_meat_mask', help="if no meat mask is provided, use the default?", action='store_true', default=False)
     parser.add_argument('--thread', help='path to thread array data') # , default='/media/emmah/PortableSSD/Arclab_data/paper_singular_needle/frame_000000.npy')
     parser.add_argument('--mask_erode', help='choose to erode mask for less chance of flying points', default=True)
     parser.add_argument('--rect_img', help="non-rectified images are 1080 by 1920, rectified are 480 by 640", default=True)
-    parser.add_argument('--downloads', help="use downloaded file", default=False)
+    parser.add_argument('--downloads', help="use downloaded file", action='store_true')
     
 
     args = parser.parse_args()
@@ -50,22 +51,28 @@ if __name__ == '__main__':
     else:
         npy_file = args.npy_file if args.npy_file is not None else "/media/emmah/PortableSSD/Arclab_data/trial_9_data/trial_9_RAFT_output_1/frame_000001.npy"
         png_file = args.png_file if args.png_file is not None else"/media/emmah/PortableSSD/Arclab_data/trial_9_data/trial_9_left_rgb/frame_000001.png"
-        mask_file = args.meat_mask_file if args.meat_mask_file is not None else"/media/emmah/PortableSSD/Arclab_data/trial_9_data/trial_9_single_arm_no_tension_masks_meat_left/trial_9_single_arm_no_tension_masks_meat/frame0001.png"
+        mask_file = args.meat_mask_file if args.meat_mask_file is not None else None
+        mask_file = "/media/emmah/PortableSSD/Arclab_data/trial_9_data/trial_9_single_arm_no_tension_masks_meat_left/trial_9_single_arm_no_tension_masks_meat/frame0001.png" \
+                    if args.use_default_meat_mask and mask_file == None else None
         thread_file = args.thread if args.thread is not None else "/media/emmah/PortableSSD/Arclab_data/paper_singular_needle/frame_000000.npy"
         # pdb.set_trace()
         Constraints.add_meat(npy_file, png_file , mask_file)
         Constraints.add_thread(thread_file)
 
+
+    #mark the origin with a sphere
+    origin = Constraints.create_spheres_at_points([[0, 0, 0]])
+
     Constraints.meat, Constraints.spheres_one = Constraints.KNN_play(Constraints.meat, Constraints.thread)
     meat_neighborhoods, _, thread_points = Constraints.KNN_neighborhoods(Constraints.meat, Constraints.thread)
     # pdb.set_trace()
 
-    # dis = Constraints.norm_of_neighborhoods(meat_neighborhoods, thread_points)
-    # print("distance between meat and thread nodes", dis)
+    dis = Constraints.norm_of_neighborhoods(meat_neighborhoods, thread_points)
+    print("distance between meat and thread nodes", dis)
     
     change = [0, 0, 0, 0, 0, 0]
     print(f"original distance is {Constraints.thread_transformation_dis(change, Constraints.meat, Constraints.thread)}")
-    objects = [Constraints.spheres_one]
+    objects = [Constraints.spheres_one, origin]
     Constraints.visualize_objects(objects)
 
     # Constraints.thread_trans = Constraints.align_objects(Constraints.meat, Constraints.thread, Constraints.meat_bound.center, Constraints.thread_bound.center)
@@ -127,3 +134,9 @@ if __name__ == '__main__':
 
 
 
+# sample commands
+'''
+python alignment_run.py --npy_file /media/emmah/PortableSSD/Arclab_data/thread_meat_3_21/trial_21/npy/frame_000000.npy \
+    --png_file /media/emmah/PortableSSD/Arclab_data/thread_meat_3_21/trial_21/left_rgb/frame_000000.png \
+        --thread /media/emmah/PortableSSD/Arclab_data/thread_meat_3_21/thread_meat_3_21_collected/trial_21_spline.npy
+'''

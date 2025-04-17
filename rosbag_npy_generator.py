@@ -265,7 +265,9 @@ if __name__ == '__main__':
         args.image_dir = args.bag_file if args.image_dir is None else args.image_dir
         left_dir, right_dir = ros2bag_extract(args)
 
-    generate_npy(args, left_dir, right_dir)
+    gen_npy = True
+    if gen_npy:
+        generate_npy(args, left_dir, right_dir)
 
 
 '''

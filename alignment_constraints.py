@@ -59,10 +59,10 @@ class ReconstructAlign:
 
     def add_thread(self, thread_file_path:str) -> o3d.geometry.LineSet:
         assert(self.thread_init == False)
-        self.thread = np.load(thread_file_path)
+        self.thread = np.load(thread_file_path, allow_pickle=True)
 
-        thread_data = np.load(thread_file_path)
-        thread_data = thread_data * 1000 # scale up to match meat point cloud size
+        thread_data = np.load(thread_file_path, allow_pickle=True)
+        thread_data = thread_data * 1  # * 1000 scale up to match meat point cloud size
         n = thread_data.shape[0]
         vectors = [[i, i+1] for i in range(n-1)]
         colors = [[0, 0, 0] for i in range(n-1)]
@@ -92,8 +92,8 @@ class ReconstructAlign:
 
         # Remove flying points
         flying_mask = np.ones((H, W), dtype=bool)
-        flying_mask[1:][np.abs(depth[1:] - depth[:-1]) > 1] = False
-        flying_mask[:,1:][np.abs(depth[:,1:] - depth[:,:-1]) > 1] = False
+        # flying_mask[1:][np.abs(depth[1:] - depth[:-1]) > 1] = False
+        # flying_mask[:,1:][np.abs(depth[:,1:] - depth[:,:-1]) > 1] = False
 
 
         # mask meat only
@@ -304,8 +304,8 @@ class ReconstructAlign:
         normals_ontop = np.diag(np.dot(pcd_normals, thread_knn_normals.T))
 
 
-        methods = ["sigmoid", "sign", "tanh"]
-        method = methods[2]
+        # methods = ["sigmoid", "sign", "tanh"]
+        method = "tanh"
         print(f"using alignment method {method}")
 
         # sigmoid method
@@ -345,8 +345,8 @@ class ReconstructAlign:
         normals_ontop = np.diag(np.dot(pcd_normals, thread_knn_normals.T))
 
 
-        methods = ["sigmoid", "sign", "tanh"]
-        method = methods[0]
+        # methods = ["sigmoid", "sign", "tanh"]
+        method = "tanh"
 
         # sigmoid method
         if method == "sigmoid":
@@ -389,7 +389,7 @@ class ReconstructAlign:
         # bounds = ((0, None), (0, None), (0, None), (0, None), (0, None), (0, None))
         bounds = ((-100, 100), (-100, 1000), (-100, 100), (-np.pi/2, np.pi/2), (-np.pi/2, np.pi/2), (-np.pi/2, np.pi/2))
        
-        eq_cons = {'type': 'eq', 'fun' : self.thread_normal_const, 'args': (pcd, thread)}
+        eq_cons = {'type': 'ineq', 'fun' : self.thread_normal_const, 'args': (pcd, thread)}
         
         x0 = np.random.rand(6) * 10e-7  
         res = minimize(self.thread_transformation_dis, x0, method='SLSQP', args=(pcd, thread),
