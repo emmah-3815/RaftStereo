@@ -2,24 +2,9 @@ from alignment_constraints import ReconstructAlign
 import argparse
 import numpy as np
 import pdb
-
+import os
 
 Constraints = ReconstructAlign()
-
-def camera_params(rect=True):
-    if rect==True:
-        # camera parameters on rectified images
-        fx, fy, cx1, cy = 882.996114514, 882.996114514, 445.06146749, 190.24049547
-        cx2 = 445.061467
-        baseline = 5.8513759749420302 # mm
-
-    else:
-        # camera parameters on non-rectified images
-        fx, fy, cx1, cy = 1.6796e+03, 1.6681e+03, 839.1909, 496.6793
-        cx2 = 1.0265e+03
-        baseline = 6.6411 # mm
-    return fx, fy, cx1, cy, cx2, baseline
-
 
 
 if __name__ == '__main__':
@@ -33,11 +18,11 @@ if __name__ == '__main__':
     parser.add_argument('--mask_erode', help='choose to erode mask for less chance of flying points', default=True)
     parser.add_argument('--rect_img', help="non-rectified images are 1080 by 1920, rectified are 480 by 640", default=True)
     parser.add_argument('--downloads', help="use downloaded file", action='store_true')
-    
+    parser.add_argument('--calib', help="camera calibration yaml file", default=os.path.dirname(__file__) + "/assets/camera_calibration_fei.yaml")
 
     args = parser.parse_args()
 
-    Constraints.init_camera_params(camera_params(rect=args.rect_img))
+    Constraints.init_camera_params(args.calib)
     Constraints.init_object_params(args.mask_erode)
 
     # use downloaded file  in the raft stereo directory without the external ssd
@@ -67,12 +52,16 @@ if __name__ == '__main__':
     meat_neighborhoods, _, thread_points = Constraints.KNN_neighborhoods(Constraints.meat, Constraints.thread)
     # pdb.set_trace()
 
+    # distance between thread and meat nodes
     dis = Constraints.norm_of_neighborhoods(meat_neighborhoods, thread_points)
-    print("distance between meat and thread nodes", dis)
+    # print("distance between meat and thread nodes", dis)
     
     change = [0, 0, 0, 0, 0, 0]
     print(f"original distance is {Constraints.thread_transformation_dis(change, Constraints.meat, Constraints.thread)}")
     objects = [Constraints.spheres_one, origin]
+    print("thread normal calcs original")
+    Constraints.thread_normal_calcs(change, Constraints.meat, Constraints.thread)
+
     Constraints.visualize_objects(objects)
 
     # Constraints.thread_trans = Constraints.align_objects(Constraints.meat, Constraints.thread, Constraints.meat_bound.center, Constraints.thread_bound.center)
@@ -82,12 +71,17 @@ if __name__ == '__main__':
     # pdb.set_trace()
 
     # slsqp optimization
-    
     change = Constraints.slsqp_solver(Constraints.meat, Constraints.thread)
     Constraints.thread_trans = Constraints.thread_transform(change, Constraints.meat, Constraints.thread)
     print(f"after moving {change}, distance is {Constraints.thread_transformation_dis(change, Constraints.meat, Constraints.thread)}")
     Constraints.meat, Constraints.spheres_two = Constraints.KNN_play(Constraints.meat, Constraints.thread_trans)
+    print("thread normal calcs after trans")
+    Constraints.thread_normal_calcs(change, Constraints.meat, Constraints.thread_trans)
     
+    # depth alignment
+    change = Constraints.depth_solver(Constraints.meat, Constraints.thread)
+
+
 
     # manual translation and rotation
     '''
@@ -139,4 +133,8 @@ if __name__ == '__main__':
 python alignment_run.py --npy_file /media/emmah/PortableSSD/Arclab_data/thread_meat_3_21/trial_21/npy/frame_000000.npy \
     --png_file /media/emmah/PortableSSD/Arclab_data/thread_meat_3_21/trial_21/left_rgb/frame_000000.png \
         --thread /media/emmah/PortableSSD/Arclab_data/thread_meat_3_21/thread_meat_3_21_collected/trial_21_spline.npy
+
+threads:
+trial 20 doesn't have great thread reconstruction
+trial 30 doesn't have a good depth reconstruction
 '''

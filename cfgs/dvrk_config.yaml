@@ -1,0 +1,47 @@
+# file setting
+camera_file: dvrk_camera_calibration_before_rectify_xiao.yaml
+weights: pretrained_model_KITTI2015.tar
+
+# publisher
+disp_publisher: /camera/disp_image
+depth_publisher: /camera/depth_image
+color_publisher: /camera/color_image
+pcl_publisher: /point_cloud
+
+left_image_rectified_topic: /stereo/left/rectified_downscaled_image
+right_image_rectified_topic: /stereo/right/rectified_downscaled_image
+
+left_camera_frame: /stereo/left/rectified_camera
+right_camera_frame: /stereo/right/rectified_camera
+
+# subscriber
+left_image_sub: /stereo_rig/left/image_raw
+right_image_sub: /stereo_rig/right/image_raw
+
+# parameters for applying mask
+mask_offset: 100
+dilation_size: 9
+
+# original image size
+input_img_width: 1920
+input_img_height: 1080
+
+# pre-scaling before this world of ros 
+pre_scaling_factor: 1
+
+# scale the input image after receiving
+scaleing_factor: 2
+
+# output depth map size
+output_img_width: 640
+output_img_height: 480
+# output_img_width: 1920
+# output_img_height: 1080
+
+# depth scaling for fusion
+depth_scaling : 1
+
+# sleep time between each msg
+sleep_time: 0.0
+
+frame: cam

@@ -32,12 +32,28 @@ class ReconstructAlign:
         self.t_m_contact = None
         self.vis_objects = []
 
-    def init_camera_params(self, params) -> None:
-        # params = fx, fy, cx1, cy, cx2, baseline
-        # camera parameters
-        self.fx, self.fy, self.cx1, self.cy = params[0], params[1], params[2], params[3]
-        self.cx2 = params[4]
-        self.baseline = params[5]
+    def init_camera_params(self, calib) -> None:
+        # camera parameters on non-rectified images
+        # fx, fy, cx1, cy = 1.6796e+03, 1.6681e+03, 839.1909, 496.6793
+        # cx2 = 1.0265e+03
+        # baseline = 6.6411 # mm
+
+        # fei's yaml camera parameters
+        # fx, fy, cx1, cy = 1.02588223e+03, 1.02588223e+03, 1.67919017e+02, 2.34152707e+02
+        # cx2 = 1.67919017e+02
+        # baseline = 6.820275085 # mm
+        
+        cv_file = cv.FileStorage(calib, cv.FILE_STORAGE_READ)
+        K1 = cv_file.getNode("K1").mat()
+        T = cv_file.getNode("T").mat()
+        self.fx = K1[0][0]
+        self.fy = K1[1][1]
+        self.cx1 = K1[0][2]
+        self.cy = K1[1][2]
+        self.cx2 = self.cx1 # the same value in fei's yaml
+        self.baseline = T[0][0] * -1
+
+
 
     def init_object_params(self, mask_erode=True) -> None:
         self.mask_erode = mask_erode # meat mask erode
@@ -135,7 +151,8 @@ class ReconstructAlign:
         bounding_box.color = [1, 0, 0]
         # bounding_box_vertices = np.asarray(o3d.geometry.OrientedBoundingBox.get_box_points(bounding_box))
         return bounding_box
-
+    
+    '''
     def align_objects(self, first, second, first_center, second_center): #  meat, thread, meat_bound.center, thread_bound.center
         first_pts = np.asarray(first.points)
         second_pts = np.asarray(second.points)
@@ -196,7 +213,6 @@ class ReconstructAlign:
 
         return
 
-
     def distance(self, meat, thread, suture):
         # calculate abs(distance between three objects)
         distance = None
@@ -208,7 +224,7 @@ class ReconstructAlign:
         p2 = np.array(secondary.point)[np.newaxis, :, :]
         
         close_pts = (np.linalg.norm(p1 - p2, axis=2) < radius).nonzero()
-
+    '''
     def KNN_play(self, pcd, thread): # pcd and thread as o3d.geometry objects
         ## KNN search 200(neighbors) closest points on pcd with respect to each node on thread
         color = 0
@@ -234,10 +250,10 @@ class ReconstructAlign:
         return pcd, spheres
 
     
-    def KNN_neighborhoods(self, pcd, thread):
+    def KNN_neighborhoods(self, pcd, thread, neighbors=1):
         key_points = thread.points
         pcd_tree = o3d.geometry.KDTreeFlann(pcd)
-        neighbors = 1
+        neighbors = neighbors
         pcd_neighbors = []
         pcd_neighbors_normal = []
         pcd_idx = []
@@ -290,7 +306,7 @@ class ReconstructAlign:
         dis_sum = np.sum(dis)
         return dis_sum
     
-    def thread_normal_const(self, x, pcd, thread_input): # checks if the thread is above meat using normal vectors
+    def thread_normal_const(self, x, pcd, thread_input ): # checks if the thread is above meat using normal vectors
         thread = copy.copy(thread_input)
         R_center = self.generate_bounding_box(thread).center
         R = o3d.geometry.get_rotation_matrix_from_axis_angle(x[3:])
@@ -301,7 +317,8 @@ class ReconstructAlign:
         pcd_normals = np.average(pcd_neighbors_n_trans, axis=1)
         thread_knn_normals = np.average(pcd_neighbors_trans, axis=1) - key_points_trans # thread nodes to its nearest point vector
         # array of meat to thread vectors
-        normals_ontop = np.diag(np.dot(pcd_normals, thread_knn_normals.T))
+
+        normals_ontop = np.diag(np.dot(pcd_normals, thread_knn_normals.T)) * -1
 
 
         # methods = ["sigmoid", "sign", "tanh"]
@@ -324,11 +341,15 @@ class ReconstructAlign:
         # tanh method
         elif method == "tanh":
             signs = np.tanh(normals_ontop) # tanh cuts in even more
+            normals = 1 - signs
+            sum_error = np.sum(normals) - len(normals)
             sum_normals = np.mean(signs)
 
-        sum_normals = np.mean(signs)
+            # with the shift it still means that the thread solves for the cloestest point disregarding being on top of the thread
 
-        return sum_normals
+        sum_normals = np.sum(signs)
+
+        return sum_error
         
     def thread_normal_calcs(self, x, pcd, thread_input): # checks if the thread is above meat using normal vectors
         thread = copy.copy(thread_input)
@@ -342,7 +363,7 @@ class ReconstructAlign:
         thread_knn_normals = np.average(pcd_neighbors_trans, axis=1) - key_points_trans # thread nodes to its nearest point vector
 
         # array of meat to thread vectors
-        normals_ontop = np.diag(np.dot(pcd_normals, thread_knn_normals.T))
+        normals_ontop = np.diag(np.dot(pcd_normals, thread_knn_normals.T)) * -1
 
 
         # methods = ["sigmoid", "sign", "tanh"]
@@ -366,8 +387,10 @@ class ReconstructAlign:
         # tanh method
         elif method == "tanh":
             signs = np.tanh(normals_ontop) # tanh cuts in even more
+            normals = 1 - signs
+            sum_error = np.sum(normals) - len(normals)
             sum_normals = np.mean(signs)
-            normals = signs
+            # normals = signs
 
 
 
@@ -376,8 +399,7 @@ class ReconstructAlign:
         # ontop = np.add(normals_ontop, addition)
         # sum_normals = np.mean(normals_ontop - ontop)
 
-
-        return sum_normals, normals
+        return sum_error, normals
 
     
 
@@ -388,6 +410,9 @@ class ReconstructAlign:
 
         # bounds = ((0, None), (0, None), (0, None), (0, None), (0, None), (0, None))
         bounds = ((-100, 100), (-100, 1000), (-100, 100), (-np.pi/2, np.pi/2), (-np.pi/2, np.pi/2), (-np.pi/2, np.pi/2))
+
+        # bounds for no rotation
+        bounds = ((-100, 100), (-100, 1000), (-100, 100), (0, 0), (0, 0), (0, 0))
        
         eq_cons = {'type': 'ineq', 'fun' : self.thread_normal_const, 'args': (pcd, thread)}
         
@@ -400,19 +425,15 @@ class ReconstructAlign:
         print("normal constraint results", self.thread_normal_calcs(res.x, pcd, thread))
         return res.x
 
-    # def thread_top_meat_constraint(self, pcb, thread_points, alignment):
-
-    #     N = [] # normal vectors of meat closest to the thread nodes
-    #     x = [] # thread nodes 
-    #     x_align = alignment(x)
-    #     eq_cons = {'type' : 'eq',
-    #                'fun' : lambda x: np.array([np.sign(np.dot(N.T, alignment(x)))-1]),
-    #                'jac' : lambda x: np.array([[alignment(x)]])}
-    #     return eq_cons
-    
-    # def thread_form_constraint(self, pcb, thread_points, alignment):
+    def depth_solver(self, pcd, thread):
+        max_iter = 100
+        thread_pts = thread.points
+        while iter < max_iter:
+            pcd_neighbors_og, pcd_neighbors_n_og, key_points_og = self.KNN_neighborhoods(pcd, thread)
+            z_dis = np.mean(np.array(thread_pts[2])[:, np.newaxis] - np.array(pcd_neighbors_og[2]), axis=2) # find the distance of each thread node to knn neighbor on meat, mean to take the average of the knn neighbors
 
 
+        return
 
     
     def create_spheres_at_points(self, points, radius=0.5, color=[1, 0, 0]):
@@ -451,59 +472,49 @@ class ReconstructAlign:
         vis.run()
 
 
-'''
-point1 = [(177.4150316259643, 80.06868164738896, 82.32650976966762),
-          (162.04772459076872, 80.29781125179436, 153.403148072541),
-          (153.403148072541, 82.32650976966762, 80.29781125179436),
-          (165.2980351177718, 84.62501223785691, 83.98251402600364),
-          (-168.7499999978935, 83.98251402600364, 81.58268534624698),
-          (-168.74999999845744, 81.58268534624698, 81.58268534624698)]
+    '''
+    point1 = [(177.4150316259643, 80.06868164738896, 82.32650976966762),
+            (162.04772459076872, 80.29781125179436, 153.403148072541),
+            (153.403148072541, 82.32650976966762, 80.29781125179436),
+            (165.2980351177718, 84.62501223785691, 83.98251402600364),
+            (-168.7499999978935, 83.98251402600364, 81.58268534624698),
+            (-168.74999999845744, 81.58268534624698, 81.58268534624698)]
 
-point2 = [(157.50739908371222, 77.7317781763434, 153.403148072541),
-          (-168.75000000105112, 76.80636446168572, 81.58268534624698),
-          (-179.99260091805525, 77.73177817832965, 81.58268534624698),
-          (177.41503162596428, 80.06868164738897, 82.32650976966762),
-          (-168.7500000015425, 81.58268534399583, 81.58268534624698),
-          (-154.91503162867107, 80.06868164543069, 153.403148072541)]
+    point2 = [(157.50739908371222, 77.7317781763434, 153.403148072541),
+            (-168.75000000105112, 76.80636446168572, 81.58268534624698),
+            (-179.99260091805525, 77.73177817832965, 81.58268534624698),
+            (177.41503162596428, 80.06868164738897, 82.32650976966762),
+            (-168.7500000015425, 81.58268534399583, 81.58268534624698),
+            (-154.91503162867107, 80.06868164543069, 153.403148072541)]
 
-import numpy as np
+    import numpy as np
 
-# set tolerance to control how close values need to be 
-# to be considered the same
-tolerance = 10**(-6) 
+    # set tolerance to control how close values need to be 
+    # to be considered the same
+    tolerance = 10**(-6) 
 
-p1 = np.array(point1)[:, np.newaxis, :]
-p2 = np.array(point2)[np.newaxis, :, :]
-print(p1, "\n", p2)
-print((np.linalg.norm(p1 - p2, axis=2) < tolerance).nonzero())
+    p1 = np.array(point1)[:, np.newaxis, :]
+    p2 = np.array(point2)[np.newaxis, :, :]
+    print(p1, "\n", p2)
+    print((np.linalg.norm(p1 - p2, axis=2) < tolerance).nonzero())
 
-should print
-(array([0, 5]), array([3, 4]))
-meaning 0 and 3 are similar, 5 and 4 and similar
+    should print
+    (array([0, 5]), array([3, 4]))
+    meaning 0 and 3 are similar, 5 and 4 and similar
 
-import numpy as np
+    import numpy as np
 
-# set tolerance to control how close values need to be 
-# to be considered the same
-tolerance = 10**(-6) 
+    # set tolerance to control how close values need to be 
+    # to be considered the same
+    tolerance = 10**(-6) 
 
-p1 = np.array(point1)[:, np.newaxis, :]
-p2 = np.array(point2)[np.newaxis, :, :]
-print(np.linalg.norm(p1 - p2, axis=2))
-close_index = (np.linalg.norm(p1 - p2, axis=2) < tolerance).nonzero()
-print(close_index)
-close_list = np.array([i.tolist() for i in close_index])
-print(close_list)
-p1_list = close_list[:,0]
-print(p1_list)
-
-
-
-
-
-
-
-
-
-
-'''
+    p1 = np.array(point1)[:, np.newaxis, :]
+    p2 = np.array(point2)[np.newaxis, :, :]
+    print(np.linalg.norm(p1 - p2, axis=2))
+    close_index = (np.linalg.norm(p1 - p2, axis=2) < tolerance).nonzero()
+    print(close_index)
+    close_list = np.array([i.tolist() for i in close_index])
+    print(close_list)
+    p1_list = close_list[:,0]
+    print(p1_list)
+    '''
