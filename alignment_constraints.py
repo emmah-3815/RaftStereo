@@ -20,12 +20,14 @@ class ReconstructAlign:
         self.thread = None
         self.meat = None
         self.spheres = None
+        self.origin = None
 
         # initilization checks
         self.needle_init = False
         self.thread_init = False
         self.meat_init = False
         self.spheres_init = False
+        self.origin_init = False
 
         self.n_t_contact = None
         self.n_m_contact = None
@@ -64,13 +66,15 @@ class ReconstructAlign:
         assert(self.meat_init == True)
 
 
-    def add_needle(self, needle, bounding_box):
+    def add_needle(self, needle_obj_path:str):
         assert(self.needle_init == False)
+        needle = o3d.io.read_triangle_mesh(needle_obj_path)
         self.needle = needle
-        self.needle_bound = bounding_box
+        self.needle = self.needle.scale(1000.0, center=(0, 0, 0))
+        self.needle_bound = self.generate_bounding_box(self.needle)
         # add addtional modifications here
-
-
+        # instead of adding the needle, use a set of points to indicate needle instead, so that the coordinate frame is given to match with the camera
+        ###
         self.needle_init = True
 
     def add_thread(self, thread_file_path:str) -> o3d.geometry.LineSet:
@@ -91,10 +95,7 @@ class ReconstructAlign:
         self.thread_bound = self.generate_bounding_box(self.thread)
         self.thread_init = True
 
-
-
-
-    def add_meat(self, meat_npy_path, meat_png_path, meat_mask_file=None):
+    def add_meat(self, meat_npy_path, meat_png_path, meat_mask_file=None) -> o3d.geometry.PointCloud:
         assert(self.meat_init == False)
 
         disp = np.load(meat_npy_path)
@@ -144,6 +145,20 @@ class ReconstructAlign:
         # down sample point cloud
         # pcd = o3d.geometry.PointCloud.random_down_sample(pcd, 0.1)
         self.meat_init = True
+
+    def add_sudo_origin(self):
+        assert(self.origin_init == False)
+        # mesh_cylinder = o3d.geometry.TriangleMesh.create_cylinder(radius=0.3,
+        #                                                   height=4.0)
+
+        mesh_cylinder = o3d.geometry.TriangleMesh.create_coordinate_frame(
+                size=0.6, origin=[0, 0, 0]).scale(50.0, center=(0, 0, 0))
+        # double check that the coordinate frame is the same as the camera frame, if it is, then I don't have to create my own coordinate points
+
+        self.origin = mesh_cylinder
+        self.origin_init = True
+
+
 
     def generate_bounding_box(self, geometry:o3d.geometry.PointCloud) -> o3d.geometry.OrientedBoundingBox:
         bounding_box = o3d.geometry.OrientedBoundingBox.get_oriented_bounding_box(geometry)
@@ -231,13 +246,18 @@ class ReconstructAlign:
         red = 0
         blue = 1
         neighbors = 3
+        first_pt = True
         pcd = pcd
         key_points = thread.points
         pcd_tree = o3d.geometry.KDTreeFlann(pcd)
         spheres = o3d.geometry.TriangleMesh()
         for point in key_points:
             # sphere = self.create_spheres_at_points([point], radius=0.5, color=[color, 0, 1])
-            sphere = self.create_spheres_at_points([point], radius=0.5, color=[red, 0, blue])
+            if first_pt:
+                sphere = self.create_spheres_at_points([point], radius=0.5, color=[0, 1, 0])
+                first_pt = False
+            else:
+                sphere = self.create_spheres_at_points([point], radius=0.5, color=[red, 0, blue])
             spheres += sphere
             # print("Finding ", point, "'s ", neighbors, "nearest neighbors, and painting them blue")
             [k, idx, _] = pcd_tree.search_knn_vector_3d(point, neighbors)
@@ -289,6 +309,16 @@ class ReconstructAlign:
         thread_translate = thread.translate(T)
         thread_transform = thread_translate.rotate(R, center=R_center)
         return thread_transform
+
+    def needle_align(self, x, quat=False):
+        T = x[:3]
+        if quat: # if rotation is a quaternion
+            R = o3d.geometry.get_rotation_matrix_from_quaternion(x[3:])
+        else:
+            R = o3d.geometry.get_rotation_matrix_from_axis_angle(x[3:])
+        self.needle.translate(T)
+        R_center = self.generate_bounding_box(self.needle).center
+        # self.needle.rotate(R, center=R_center)
 
 
     def thread_transformation_dis(self, x, pcd, thread_input):
@@ -456,18 +486,18 @@ class ReconstructAlign:
         if self.thread_init == True: self.vis_objects.append(self.thread)
         if self.meat_init == True: self.vis_objects.append(self.meat) 
         if self.needle_init == True: self.vis_objects.append(self.needle)
+        if self.origin_init == True: self.vis_objects.append(self.origin)
         if self.thread_bound is not None: self.vis_objects.append(self.thread_bound)
         if self.meat_bound is not None: self.vis_objects.append(self.meat_bound)
         if self.needle_bound is not None: self.vis_objects.append(self.needle_bound)
 
-        
         for object in self.vis_objects:
             ## down sample point cloud ##
             # if o3d.geometry.Geometry.get_geometry_type(object).value == 1: # type point cloud is 1
             #     object = o3d.geometry.PointCloud.random_down_sample(object, 0.3)
             vis.add_geometry(object)
         
-        opt.show_coordinate_frame = True
+        # opt.show_coordinate_frame = True
         # red is x, green is y, blue is z
         vis.run()
 

@@ -1,7 +1,5 @@
 from alignment_constraints import ReconstructAlign
 import argparse
-import numpy as np
-import pdb
 import os
 
 Constraints = ReconstructAlign()
@@ -19,6 +17,8 @@ if __name__ == '__main__':
     parser.add_argument('--rect_img', help="non-rectified images are 1080 by 1920, rectified are 480 by 640", default=True)
     parser.add_argument('--downloads', help="use downloaded file", action='store_true')
     parser.add_argument('--calib', help="camera calibration yaml file", default=os.path.dirname(__file__) + "/assets/camera_calibration_fei.yaml")
+    parser.add_argument('--needle', help='path to needle obj file') # , default='/media/emmah/PortableSSD/Arclab_data/paper_singular_needle/frame_000000.npy')
+
 
     args = parser.parse_args()
 
@@ -31,8 +31,11 @@ if __name__ == '__main__':
         png_file = "/home/emmah/ARClab/RAFT-Stereo/alignment_dataset/trial_9_frame_000001.png"
         mask_file = "/home/emmah/ARClab/RAFT-Stereo/alignment_dataset/trial_9_mask_frame0001.png"
         thread_file = "/home/emmah/ARClab/RAFT-Stereo/alignment_dataset/thread_frame_000000.npy"
+        needle_file = "/home/emmah/ARClab/RAFT-Stereo/assets/Needle_R_01146.obj"
         Constraints.add_meat(npy_file, png_file , mask_file)
         Constraints.add_thread(thread_file)
+        Constraints.add_needle(needle_file)
+        Constraints.add_sudo_origin()
     else:
         npy_file = args.npy_file if args.npy_file is not None else "/media/emmah/PortableSSD/Arclab_data/trial_9_data/trial_9_RAFT_output_1/frame_000001.npy"
         png_file = args.png_file if args.png_file is not None else"/media/emmah/PortableSSD/Arclab_data/trial_9_data/trial_9_left_rgb/frame_000001.png"
@@ -40,13 +43,21 @@ if __name__ == '__main__':
         mask_file = "/media/emmah/PortableSSD/Arclab_data/trial_9_data/trial_9_single_arm_no_tension_masks_meat_left/trial_9_single_arm_no_tension_masks_meat/frame0001.png" \
                     if args.use_default_meat_mask and mask_file == None else None
         thread_file = args.thread if args.thread is not None else "/media/emmah/PortableSSD/Arclab_data/paper_singular_needle/frame_000000.npy"
+        needle_file = args.needle if args.needle is not None else "/media/emmah/PortableSSD/Arclab_data/Needle_R_01146.obj"
         # pdb.set_trace()
         Constraints.add_meat(npy_file, png_file , mask_file)
         Constraints.add_thread(thread_file)
+        Constraints.add_needle(needle_file)
+        Constraints.add_sudo_origin()
 
 
     #mark the origin with a sphere
     origin = Constraints.create_spheres_at_points([[0, 0, 0]])
+
+    # move needle to the correct position
+    needle_pos = 9.85004, -27.545028, 299.91204, \
+                 0.14580808, 0.368426940, -0.54304734, 0.737861926
+    Constraints.needle_align(needle_pos, quat=True)
 
     Constraints.meat, Constraints.spheres_one = Constraints.KNN_play(Constraints.meat, Constraints.thread)
     meat_neighborhoods, _, thread_points = Constraints.KNN_neighborhoods(Constraints.meat, Constraints.thread)
