@@ -79,7 +79,7 @@ class ReconstructAlign:
 
     def add_thread(self, thread_file_path:str) -> o3d.geometry.LineSet:
         assert(self.thread_init == False)
-        self.thread = np.load(thread_file_path, allow_pickle=True)
+        # self.thread = np.load(thread_file_path, allow_pickle=True)
 
         thread_data = np.load(thread_file_path, allow_pickle=True)
         thread_data = thread_data * 1  # * 1000 scale up to match meat point cloud size
@@ -94,6 +94,18 @@ class ReconstructAlign:
 
         self.thread_bound = self.generate_bounding_box(self.thread)
         self.thread_init = True
+
+    def flip_thread(self, thread_file_path:str):
+        assert(self.thread_init == True)
+        user = input("Flip thread? y/n ")
+        if user == "y":
+            self.thread_init = False
+            thread_data = np.load(thread_file_path, allow_pickle=True)[::-1]
+            with open(thread_file_path, "wb") as f:
+                print("saving flipped spline")
+                np.save(f, thread_data)
+            self.add_thread(thread_file_path)
+
 
     def add_meat(self, meat_npy_path, meat_png_path, meat_mask_file=None) -> o3d.geometry.PointCloud:
         assert(self.meat_init == False)
@@ -146,45 +158,58 @@ class ReconstructAlign:
         # pcd = o3d.geometry.PointCloud.random_down_sample(pcd, 0.1)
         self.meat_init = True
 
+    def load_needle_pos(self, pos_file):
+        import pickle
+        with open(pos_file, 'rb') as f:
+            data = pickle.load(f)
+
+        self.needle_pos = np.array([data.get('x'), data.get('y'), data.get('z'), data.get('qw'), data.get('qx'), data.get('qy'), data.get('qz')]) * 1000
+
+        # rotation_matrix = o3d.geometry.get_rotation_matrix_from_quaternion(needle_pos[3:])
+        # euler_angles = o3d.geometry.get_euler_angles_from_matrix(rotation_matrix)
+        # self.needle_pos = np.array((needle_pos[:3], euler_angles))
+
+
     def add_sudo_origin(self):
         assert(self.origin_init == False)
-        # mesh_cylinder = o3d.geometry.TriangleMesh.create_cylinder(radius=0.3,
-        #                                                   height=4.0)
+        x_cylinder = o3d.geometry.TriangleMesh.create_cylinder(radius=0.3,
+                                                          height=16.0)
 
-        mesh_cylinder = o3d.geometry.TriangleMesh.create_coordinate_frame(
+        origin = o3d.geometry.TriangleMesh.create_coordinate_frame(
                 size=0.6, origin=[0, 0, 0]).scale(50.0, center=(0, 0, 0))
         # double check that the coordinate frame is the same as the camera frame, if it is, then I don't have to create my own coordinate points
+        y_R = x_cylinder.get_rotation_matrix_from_xyz((0, np.pi / 2, 0))
+        z_R = x_cylinder.get_rotation_matrix_from_xyz((np.pi/2, 0, 0))
 
-        self.origin = mesh_cylinder
+        y_cylinder = copy.copy(x_cylinder).rotate(y_R, center=(0, 0, 0))
+        z_cylinder = copy.copy(x_cylinder).rotate(z_R, center=(0, 0, 0))
+
+        self.origin = [x_cylinder, y_cylinder, z_cylinder, origin] 
         self.origin_init = True
-
 
 
     def generate_bounding_box(self, geometry:o3d.geometry.PointCloud) -> o3d.geometry.OrientedBoundingBox:
         bounding_box = o3d.geometry.OrientedBoundingBox.get_oriented_bounding_box(geometry)
-        # aligned_bounding_box = o3d.geometry.OrientedBoundingBox.get_axis_aligned_bounding_box(point_cloud)
+        # bounding_box = o3d.geometry.OrientedBoundingBox.get_axis_aligned_bounding_box(geometry)
         bounding_box.color = [1, 0, 0]
         # bounding_box_vertices = np.asarray(o3d.geometry.OrientedBoundingBox.get_box_points(bounding_box))
         return bounding_box
     
+    def depth_solver(self, pcd, thread):
+        thread_pts = thread.points
+
+        # obtain the mean position of the meat neighborhoods
+        pcd_neighbors_og, pcd_neighbors_n_og, key_points_og = self.KNN_neighborhoods(pcd, thread, neighbors=3)
+        neighbor_z_means = np.mean(pcd_neighbors_og[:, :, 2], axis=1)
+
+        # find the lowest point of the thread with respect to the closest neighborhood on the meat
+        z_dis = neighbor_z_means -  np.array(thread_pts)[:, 2]
+        tz = np.min(z_dis)
+        translation = [0, 0, -tz, 0, 0, 0] # only z translation changes
+        
+        return translation
+    
     '''
-    def align_objects(self, first, second, first_center, second_center): #  meat, thread, meat_bound.center, thread_bound.center
-        first_pts = np.asarray(first.points)
-        second_pts = np.asarray(second.points)
-        first_closest = first_pts[first_pts[:,2].argsort()[1]] # highest is closes
-        second_furthest = second_pts[second_pts[:,2].argsort()[-1]]
-        # print("first closest", first_closest, "second futhest", second_furthest)
-        # highlights = self.create_spheres_at_points([first_closest, second_furthest])  
-
-        tz = first_center[2] - second_furthest[2] + 5
-        tx,ty= first_center[:2] - second_center[:2]
-        # translation = [tx, ty, -tz]
-        translation = [tx, ty, tz]
-        print("translation", translation)
-
-        transformed_second = copy.deepcopy(second).translate(translation)
-
-        return transformed_second
     
     def needle_thread_contact(self, threshhold):
         # measure difference between end points of thread and mount point of needle
@@ -240,14 +265,11 @@ class ReconstructAlign:
         
         close_pts = (np.linalg.norm(p1 - p2, axis=2) < radius).nonzero()
     '''
-    def KNN_play(self, pcd, thread): # pcd and thread as o3d.geometry objects
+    def KNN_play(self, pcd, thread, neighbors=3): # pcd and thread as o3d.geometry objects
         ## KNN search 200(neighbors) closest points on pcd with respect to each node on thread
-        color = 0
         red = 0
         blue = 1
-        neighbors = 3
         first_pt = True
-        pcd = pcd
         key_points = thread.points
         pcd_tree = o3d.geometry.KDTreeFlann(pcd)
         spheres = o3d.geometry.TriangleMesh()
@@ -301,16 +323,17 @@ class ReconstructAlign:
     
         return dis
 
-    def thread_transform(self, x, pcd, thread_input):
-        thread = copy.copy(thread_input)
-        R_center = self.generate_bounding_box(thread).center
+    def transform(self, x, object_in):
+        object = copy.copy(object_in)
+        R_center = self.generate_bounding_box(object).center
         R = o3d.geometry.get_rotation_matrix_from_axis_angle(x[3:])
         T = x[:3]
-        thread_translate = thread.translate(T)
-        thread_transform = thread_translate.rotate(R, center=R_center)
-        return thread_transform
+        object_transform = object.translate(T)
+        object_transform = object_transform.rotate(R, center=R_center)
+        return object_transform
 
     def needle_align(self, x, quat=False):
+        # pdb.set_trace()
         T = x[:3]
         if quat: # if rotation is a quaternion
             R = o3d.geometry.get_rotation_matrix_from_quaternion(x[3:])
@@ -318,7 +341,7 @@ class ReconstructAlign:
             R = o3d.geometry.get_rotation_matrix_from_axis_angle(x[3:])
         self.needle.translate(T)
         R_center = self.generate_bounding_box(self.needle).center
-        # self.needle.rotate(R, center=R_center)
+        self.needle.rotate(R, center=R_center)
 
 
     def thread_transformation_dis(self, x, pcd, thread_input):
@@ -455,16 +478,6 @@ class ReconstructAlign:
         print("normal constraint results", self.thread_normal_calcs(res.x, pcd, thread))
         return res.x
 
-    def depth_solver(self, pcd, thread):
-        max_iter = 100
-        thread_pts = thread.points
-        while iter < max_iter:
-            pcd_neighbors_og, pcd_neighbors_n_og, key_points_og = self.KNN_neighborhoods(pcd, thread)
-            z_dis = np.mean(np.array(thread_pts[2])[:, np.newaxis] - np.array(pcd_neighbors_og[2]), axis=2) # find the distance of each thread node to knn neighbor on meat, mean to take the average of the knn neighbors
-
-
-        return
-
     
     def create_spheres_at_points(self, points, radius=0.5, color=[1, 0, 0]):
         spheres = o3d.geometry.TriangleMesh()
@@ -486,7 +499,7 @@ class ReconstructAlign:
         if self.thread_init == True: self.vis_objects.append(self.thread)
         if self.meat_init == True: self.vis_objects.append(self.meat) 
         if self.needle_init == True: self.vis_objects.append(self.needle)
-        if self.origin_init == True: self.vis_objects.append(self.origin)
+        if self.origin_init == True: self.vis_objects.extend(self.origin)
         if self.thread_bound is not None: self.vis_objects.append(self.thread_bound)
         if self.meat_bound is not None: self.vis_objects.append(self.meat_bound)
         if self.needle_bound is not None: self.vis_objects.append(self.needle_bound)

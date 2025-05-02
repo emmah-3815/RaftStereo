@@ -18,6 +18,7 @@ if __name__ == '__main__':
     parser.add_argument('--downloads', help="use downloaded file", action='store_true')
     parser.add_argument('--calib', help="camera calibration yaml file", default=os.path.dirname(__file__) + "/assets/camera_calibration_fei.yaml")
     parser.add_argument('--needle', help='path to needle obj file') # , default='/media/emmah/PortableSSD/Arclab_data/paper_singular_needle/frame_000000.npy')
+    parser.add_argument('--needle_pos', help='path to needle pos pkl file') # , default='/media/emmah/PortableSSD/Arclab_data/paper_singular_needle/frame_000000.npy')
 
 
     args = parser.parse_args()
@@ -32,9 +33,11 @@ if __name__ == '__main__':
         mask_file = "/home/emmah/ARClab/RAFT-Stereo/alignment_dataset/trial_9_mask_frame0001.png"
         thread_file = "/home/emmah/ARClab/RAFT-Stereo/alignment_dataset/thread_frame_000000.npy"
         needle_file = "/home/emmah/ARClab/RAFT-Stereo/assets/Needle_R_01146.obj"
-        Constraints.add_meat(npy_file, png_file , mask_file)
+        needle_pos_file = "/home/emmah/ARClab/RAFT-Stereo/alignment_dataset/trial_20_needle_pose.pkl"
+        Constraints.add_meat(npy_file, png_file, mask_file)
         Constraints.add_thread(thread_file)
         Constraints.add_needle(needle_file)
+        Constraints.load_needle_pos(needle_pos_file)
         Constraints.add_sudo_origin()
     else:
         npy_file = args.npy_file if args.npy_file is not None else "/media/emmah/PortableSSD/Arclab_data/trial_9_data/trial_9_RAFT_output_1/frame_000001.npy"
@@ -44,22 +47,22 @@ if __name__ == '__main__':
                     if args.use_default_meat_mask and mask_file == None else None
         thread_file = args.thread if args.thread is not None else "/media/emmah/PortableSSD/Arclab_data/paper_singular_needle/frame_000000.npy"
         needle_file = args.needle if args.needle is not None else "/media/emmah/PortableSSD/Arclab_data/Needle_R_01146.obj"
-        # pdb.set_trace()
-        Constraints.add_meat(npy_file, png_file , mask_file)
+        needle_pos_file = args.needle_pos if args.needle_pos is not None else"/home/emmah/ARClab/RAFT-Stereo/alignment_dataset/trial_20_needle_pose.pkl"
+
+        Constraints.add_meat(npy_file, png_file, mask_file)
         Constraints.add_thread(thread_file)
         Constraints.add_needle(needle_file)
+        Constraints.load_needle_pos(needle_pos_file)
         Constraints.add_sudo_origin()
 
 
     #mark the origin with a sphere
     origin = Constraints.create_spheres_at_points([[0, 0, 0]])
 
-    # move needle to the correct position
-    needle_pos = 9.85004, -27.545028, 299.91204, \
-                 0.14580808, 0.368426940, -0.54304734, 0.737861926
-    Constraints.needle_align(needle_pos, quat=True)
+    # move needle to the recorded position
+    Constraints.needle_align(Constraints.needle_pos, quat=True)
 
-    Constraints.meat, Constraints.spheres_one = Constraints.KNN_play(Constraints.meat, Constraints.thread)
+    Constraints.meat, Constraints.spheres_one = Constraints.KNN_play(Constraints.meat, Constraints.thread, neighbors=10)
     meat_neighborhoods, _, thread_points = Constraints.KNN_neighborhoods(Constraints.meat, Constraints.thread)
     # pdb.set_trace()
 
@@ -75,6 +78,12 @@ if __name__ == '__main__':
 
     Constraints.visualize_objects(objects)
 
+    # check if first item of thread is at needle
+    Constraints.flip_thread(thread_file)
+    # redraw spheres and neighbors
+    Constraints.meat, Constraints.spheres_one = Constraints.KNN_play(Constraints.meat, Constraints.thread)
+
+
     # Constraints.thread_trans = Constraints.align_objects(Constraints.meat, Constraints.thread, Constraints.meat_bound.center, Constraints.thread_bound.center)
     # Constraints.meat, Constraints.spheres_two = Constraints.KNN_play(Constraints.meat, Constraints.thread_trans)
 
@@ -82,15 +91,21 @@ if __name__ == '__main__':
     # pdb.set_trace()
 
     # slsqp optimization
+    '''
     change = Constraints.slsqp_solver(Constraints.meat, Constraints.thread)
     Constraints.thread_trans = Constraints.thread_transform(change, Constraints.meat, Constraints.thread)
     print(f"after moving {change}, distance is {Constraints.thread_transformation_dis(change, Constraints.meat, Constraints.thread)}")
     Constraints.meat, Constraints.spheres_two = Constraints.KNN_play(Constraints.meat, Constraints.thread_trans)
     print("thread normal calcs after trans")
     Constraints.thread_normal_calcs(change, Constraints.meat, Constraints.thread_trans)
-    
-    # depth alignment
+    '''
+
+
+    # depth alignment (runs twice to get closer to the meat)
     change = Constraints.depth_solver(Constraints.meat, Constraints.thread)
+    Constraints.meat = Constraints.transform(change, Constraints.meat)
+    change = Constraints.depth_solver(Constraints.meat, Constraints.thread)
+    Constraints.meat = Constraints.transform(change, Constraints.meat)
 
 
 
@@ -133,7 +148,8 @@ if __name__ == '__main__':
     # print("dis norm: ", np.linalg.norm(dis))
     # print("dis_trans norm:",np.linalg.norm(dis_trans))
     
-    objects = [Constraints.spheres_one, Constraints.spheres_two, Constraints.thread_trans]
+    # objects = [Constraints.spheres_one, Constraints.spheres_two, Constraints.thread_trans]
+    objects = [Constraints.spheres_one]
     Constraints.visualize_objects(objects)
 
 
