@@ -59,8 +59,6 @@ if __name__ == '__main__':
     #mark the origin with a sphere
     origin = Constraints.create_spheres_at_points([[0, 0, 0]])
 
-    # move needle to the recorded position
-    Constraints.needle_align(Constraints.needle_pos, quat=True)
 
     Constraints.meat, Constraints.spheres_one = Constraints.KNN_play(Constraints.meat, Constraints.thread, neighbors=10)
     meat_neighborhoods, _, thread_points = Constraints.KNN_neighborhoods(Constraints.meat, Constraints.thread)
@@ -79,10 +77,12 @@ if __name__ == '__main__':
     Constraints.visualize_objects(objects)
 
     # check if first item of thread is at needle
-    Constraints.flip_thread(thread_file)
+    # Constraints.flip_thread(thread_file)
     # redraw spheres and neighbors
     Constraints.meat, Constraints.spheres_one = Constraints.KNN_play(Constraints.meat, Constraints.thread)
 
+    # move needle to the recorded position
+    Constraints.needle = Constraints.transform(Constraints.needle_pos, Constraints.needle, quat=True)
 
     # Constraints.thread_trans = Constraints.align_objects(Constraints.meat, Constraints.thread, Constraints.meat_bound.center, Constraints.thread_bound.center)
     # Constraints.meat, Constraints.spheres_two = Constraints.KNN_play(Constraints.meat, Constraints.thread_trans)
@@ -152,7 +152,9 @@ if __name__ == '__main__':
     objects = [Constraints.spheres_one]
     Constraints.visualize_objects(objects)
 
+    Constraints.needle = Constraints.needle_thread_conn(Constraints.needle, Constraints.thread)
 
+    Constraints.visualize_objects(objects)
 
 
 # sample commands

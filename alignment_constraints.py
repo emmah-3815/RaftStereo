@@ -66,7 +66,7 @@ class ReconstructAlign:
         assert(self.meat_init == True)
 
 
-    def add_needle(self, needle_obj_path:str):
+    def add_needle(self, needle_obj_path:str, sudo_needle=True):
         assert(self.needle_init == False)
         needle = o3d.io.read_triangle_mesh(needle_obj_path)
         self.needle = needle
@@ -74,9 +74,61 @@ class ReconstructAlign:
         self.needle_bound = self.generate_bounding_box(self.needle)
         # add addtional modifications here
         # instead of adding the needle, use a set of points to indicate needle instead, so that the coordinate frame is given to match with the camera
-        ###
-        self.needle_init = True
+        if sudo_needle:
+            r = 8.2761 #mm
+            n = 20
+            theta = np.linspace(np.pi/2, np.pi*3/2, n)
+            z_lin = np.linspace(0, 0.01, n)
 
+            points = np.array((r*np.cos(theta), r*np.sin(theta), z_lin))
+            points = np.transpose(points)
+            vectors = [[i, i+1] for i in range(n-1)]
+            # colors = [[0.1, 0.1, 0.1] for i in range(n-1)]
+
+            # pdb.set_trace()
+            self.needle = o3d.geometry.LineSet()
+            self.needle.points = o3d.utility.Vector3dVector(points)
+            self.needle.lines = o3d.utility.Vector2iVector(vectors)
+            # self.needle.colors = o3d.utility.Vector3dVector(colors)
+            
+            self.needle = self.needle_mesh(self.needle, radius=0.5)
+
+            self.needle_bound = self.generate_bounding_box(self.needle)
+
+        else:
+            needle = o3d.io.read_triangle_mesh(needle_obj_path)
+            self.needle = needle
+            self.needle = self.needle.scale(1000.0, center=(0, 0, 0))
+            self.needle_bound = self.generate_bounding_box(self.needle)
+
+        self.needle_init = True
+        
+    def needle_mesh(self, lineset, radius=0.1):
+        from scipy.spatial.transform import Rotation as Rot
+        color = (1, 0.8, 0.8)
+
+        mesh = o3d.geometry.TriangleMesh()
+        pts = np.asarray(lineset.points)
+        for i, j in np.asarray(lineset.lines):
+            p1, p2 = pts[i], pts[j]
+            d = p2 - p1
+            l = np.linalg.norm(d)
+            z = np.array([0, 0, 1])
+
+            if l == 0:
+                continue
+            if i == 0:
+                cyl = o3d.geometry.TriangleMesh.create_cylinder(radius/2, l)
+            else:
+                cyl = o3d.geometry.TriangleMesh.create_cylinder(radius, l)
+            R = Rot.align_vectors([d], [z])[0].as_matrix()
+            cyl.rotate(R, center=d/2)
+            cyl.translate(p1)
+            mesh += cyl
+        mesh.compute_vertex_normals()
+        mesh.paint_uniform_color(color)
+        return mesh
+    
     def add_thread(self, thread_file_path:str) -> o3d.geometry.LineSet:
         assert(self.thread_init == False)
         # self.thread = np.load(thread_file_path, allow_pickle=True)
@@ -158,18 +210,6 @@ class ReconstructAlign:
         # pcd = o3d.geometry.PointCloud.random_down_sample(pcd, 0.1)
         self.meat_init = True
 
-    def load_needle_pos(self, pos_file):
-        import pickle
-        with open(pos_file, 'rb') as f:
-            data = pickle.load(f)
-
-        self.needle_pos = np.array([data.get('x'), data.get('y'), data.get('z'), data.get('qw'), data.get('qx'), data.get('qy'), data.get('qz')]) * 1000
-
-        # rotation_matrix = o3d.geometry.get_rotation_matrix_from_quaternion(needle_pos[3:])
-        # euler_angles = o3d.geometry.get_euler_angles_from_matrix(rotation_matrix)
-        # self.needle_pos = np.array((needle_pos[:3], euler_angles))
-
-
     def add_sudo_origin(self):
         assert(self.origin_init == False)
         x_cylinder = o3d.geometry.TriangleMesh.create_cylinder(radius=0.3,
@@ -210,12 +250,6 @@ class ReconstructAlign:
         return translation
     
     '''
-    
-    def needle_thread_contact(self, threshhold):
-        # measure difference between end points of thread and mount point of needle
-        # return distance -> minimize
-        return
-
     def needle_meat_contact(self, threshold):
         # calc distance between needle and meat for all points
         # if distance < threshold, consider in contact
@@ -253,17 +287,6 @@ class ReconstructAlign:
 
         return
 
-    def distance(self, meat, thread, suture):
-        # calculate abs(distance between three objects)
-        distance = None
-        return distance
-
-    def nearby_objects(self, primary, secondary, radius):
-        # if primary != #points:
-        p1 = np.array(primary.points)[:, np.newaxis, :]
-        p2 = np.array(secondary.point)[np.newaxis, :, :]
-        
-        close_pts = (np.linalg.norm(p1 - p2, axis=2) < radius).nonzero()
     '''
     def KNN_play(self, pcd, thread, neighbors=3): # pcd and thread as o3d.geometry objects
         ## KNN search 200(neighbors) closest points on pcd with respect to each node on thread
@@ -323,14 +346,29 @@ class ReconstructAlign:
     
         return dis
 
-    def transform(self, x, object_in):
+    def transform(self, x, object_in, quat=False):
         object = copy.copy(object_in)
         R_center = self.generate_bounding_box(object).center
-        R = o3d.geometry.get_rotation_matrix_from_axis_angle(x[3:])
+        if quat: # if rotation is a quaternion
+            R = o3d.geometry.get_rotation_matrix_from_quaternion(x[3:])
+        else:
+            R = o3d.geometry.get_rotation_matrix_from_axis_angle(x[3:])
         T = x[:3]
-        object_transform = object.translate(T)
-        object_transform = object_transform.rotate(R, center=R_center)
+        object_transform = object.rotate(R, center=R_center)
+        object_transform = object_transform.translate(T)
         return object_transform
+
+    def load_needle_pos(self, pos_file):
+        import pickle
+        with open(pos_file, 'rb') as f:
+            data = pickle.load(f)
+
+        self.needle_pos = np.array([data.get('x'), data.get('y'), data.get('z'), data.get('qw'), data.get('qx'), data.get('qy'), data.get('qz')]) * 1000
+
+        # rotation_matrix = o3d.geometry.get_rotation_matrix_from_quaternion(needle_pos[3:])
+        # euler_angles = o3d.geometry.get_euler_angles_from_matrix(rotation_matrix)
+        # self.needle_pos = np.array((needle_pos[:3], euler_angles))
+
 
     def needle_align(self, x, quat=False):
         # pdb.set_trace()
@@ -344,6 +382,39 @@ class ReconstructAlign:
         self.needle.rotate(R, center=R_center)
 
 
+    def needle_thread_conn(self, needle, thread):
+        r = 8.2761 #mm
+        needle_conn_pt = np.array([r, -r/2, 0])
+        needle_box = self.generate_bounding_box(needle)
+        needle_R = needle_box.R
+        needle_center = needle_box.center
+        oriented_conn_pt = np.matmul(needle_R, needle_conn_pt)
+        needle.translate(thread.points[0] - needle_center - oriented_conn_pt)
+
+        # regenerate box for box center after translation
+        needle_box = self.generate_bounding_box(needle)
+        needle_R = needle_box.R
+
+        y_axis = thread.points[0] - thread.points[1]
+        y_axis = y_axis / np.linalg.norm(y_axis)
+        x_axis = (0, 1, -1/3*y_axis[1])
+        z_axis = np.cross(y_axis, x_axis)
+        x_axis = np.cross(y_axis, z_axis)
+
+        # R = needle_R + np.zeros(3)
+        # pdb.set_trace()
+        # tangent_ro = np.matmul(needle_R, needle_R[:, 1] - tangent_dir) # y axis need to match
+        # tangent_ro = needle_R[:, 1] - tangent_dir # y axis need to match
+        # tangent_R = o3d.geometry.get_rotation_matrix_from_axis_angle(tangent_ro)
+        tangent_R = np.vstack([x_axis, y_axis, z_axis]).T
+        tangent_R = np.matmul(needle_R, tangent_R)
+        needle.rotate(tangent_R, center=thread.points[0])
+
+
+        # measure difference between end points of thread and mount point of needle
+        # return distance -> minimize
+        return needle
+
     def thread_transformation_dis(self, x, pcd, thread_input):
         # x is translation upon the origin and rotation based on an axis angle method
         thread = copy.copy(thread_input)
@@ -353,7 +424,8 @@ class ReconstructAlign:
         T = x[:3]
         thread_translate = thread.translate(T)
         thread_transform = thread_translate.rotate(R, center=R_center)
-        pcd_neighbors_trans, pcd_neighbors_n_trans, key_points_trans = self.KNN_neighborhoods(pcd, thread_transform)
+        pcd_neighbors_trans, pcd_neighbors_n_trans, key_points_trans = \
+            self.KNN_neighborhoods(pcd, thread_transform)
 
         dis = self.norm_of_thread_to_neighbors(pcd_neighbors_trans, key_points_trans)
         dis_sum = np.sum(dis)
@@ -366,7 +438,8 @@ class ReconstructAlign:
         T = x[:3]
         thread_translate = thread.translate(T)
         thread_transform = thread_translate.rotate(R, center=R_center)
-        pcd_neighbors_trans, pcd_neighbors_n_trans, key_points_trans = self.KNN_neighborhoods(pcd, thread_transform)
+        pcd_neighbors_trans, pcd_neighbors_n_trans, key_points_trans = \
+            self.KNN_neighborhoods(pcd, thread_transform)
         pcd_normals = np.average(pcd_neighbors_n_trans, axis=1)
         thread_knn_normals = np.average(pcd_neighbors_trans, axis=1) - key_points_trans # thread nodes to its nearest point vector
         # array of meat to thread vectors
