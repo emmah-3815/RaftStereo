@@ -77,7 +77,7 @@ if __name__ == '__main__':
     Constraints.visualize_objects(objects)
 
     # check if first item of thread is at needle
-    # Constraints.flip_thread(thread_file)
+    Constraints.flip_thread(thread_file)
     # redraw spheres and neighbors
     Constraints.meat, Constraints.spheres_one = Constraints.KNN_play(Constraints.meat, Constraints.thread)
 

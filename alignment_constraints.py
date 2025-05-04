@@ -1,5 +1,7 @@
 import numpy as np
 import open3d as o3d
+print(o3d.__version__)
+
 from imageio.v3 import imread
 import cv2 as cv
 import copy
@@ -393,27 +395,59 @@ class ReconstructAlign:
 
         # regenerate box for box center after translation
         needle_box = self.generate_bounding_box(needle)
-        needle_R = needle_box.R
+        # needle_R = needle_box.R
 
         y_axis = thread.points[0] - thread.points[1]
         y_axis = y_axis / np.linalg.norm(y_axis)
-        x_axis = (0, 1, -1/3*y_axis[1])
-        z_axis = np.cross(y_axis, x_axis)
-        x_axis = np.cross(y_axis, z_axis)
+        R = self.align_vector_to_vector(needle_R[:, 1], y_axis)
+        # x_axis = (0, 1, -1/3*y_axis[1])
+        # z_axis = np.array([-y_axis[1], y_axis[0], 0])
+        # z_axis = z_axis / np.linalg.norm(z_axis)
+        # x_axis = np.cross(y_axis, z_axis)
+        # x_axis = x_axis / np.linalg.norm(x_axis)
 
         # R = needle_R + np.zeros(3)
         # pdb.set_trace()
         # tangent_ro = np.matmul(needle_R, needle_R[:, 1] - tangent_dir) # y axis need to match
         # tangent_ro = needle_R[:, 1] - tangent_dir # y axis need to match
         # tangent_R = o3d.geometry.get_rotation_matrix_from_axis_angle(tangent_ro)
-        tangent_R = np.vstack([x_axis, y_axis, z_axis]).T
-        tangent_R = np.matmul(needle_R, tangent_R)
-        needle.rotate(tangent_R, center=thread.points[0])
+        # tangent_R = np.vstack([x_axis, y_axis, z_axis]).T
+        # tangent_R = np.matmul(needle_R, tangent_R)
+        needle.rotate(R, center=thread.points[0])
 
 
         # measure difference between end points of thread and mount point of needle
         # return distance -> minimize
         return needle
+
+    def align_vector_to_vector(self, v1, v2):
+        """
+        Returns a rotation matrix that aligns v1 to v2 using Open3D's get_rotation_matrix_from_axis_angle.
+
+        Parameters:
+            v1, v2: 3D vectors
+
+        Returns:
+            3x3 rotation matrix (numpy array)
+        """
+        v1 = np.asarray(v1) / np.linalg.norm(v1)
+        v2 = np.asarray(v2) / np.linalg.norm(v2)
+        cross = np.cross(v1, v2)
+        dot = np.dot(v1, v2)
+
+        if np.isclose(dot, 1.0):
+            return np.eye(3)  # No rotation needed
+        if np.isclose(dot, -1.0):
+            # 180-degree rotation around any orthogonal vector
+            ortho = np.array([1, 0, 0]) if not np.allclose(v1, [1, 0, 0]) else np.array([0, 1, 0])
+            axis = np.cross(v1, ortho)
+            axis = axis / np.linalg.norm(axis)
+            return o3d.geometry.get_rotation_matrix_from_axis_angle(axis * np.pi)
+
+        angle = np.arccos(dot)
+        axis = cross / np.linalg.norm(cross)
+        return o3d.geometry.get_rotation_matrix_from_axis_angle(axis * angle)
+
 
     def thread_transformation_dis(self, x, pcd, thread_input):
         # x is translation upon the origin and rotation based on an axis angle method
