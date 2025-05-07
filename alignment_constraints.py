@@ -35,6 +35,7 @@ class ReconstructAlign:
         self.n_m_contact = None
         self.t_m_contact = None
         self.vis_objects = []
+        self.needle_r = None
 
     def init_camera_params(self, calib) -> None:
         # camera parameters on non-rectified images
@@ -68,8 +69,9 @@ class ReconstructAlign:
         assert(self.meat_init == True)
 
 
-    def add_needle(self, needle_obj_path:str, sudo_needle=True):
+    def add_needle(self, needle_obj_path:str=None, needle_r=None, sudo_needle=True):
         assert(self.needle_init == False)
+        assert((needle_obj_path!=None) or (sudo_needle==True))
         needle = o3d.io.read_triangle_mesh(needle_obj_path)
         self.needle = needle
         self.needle = self.needle.scale(1000.0, center=(0, 0, 0))
@@ -77,12 +79,11 @@ class ReconstructAlign:
         # add addtional modifications here
         # instead of adding the needle, use a set of points to indicate needle instead, so that the coordinate frame is given to match with the camera
         if sudo_needle:
-            r = 8.2761 #mm
             n = 20
             theta = np.linspace(np.pi/2, np.pi*3/2, n)
             z_lin = np.linspace(0, 0.01, n)
 
-            points = np.array((r*np.cos(theta), r*np.sin(theta), z_lin))
+            points = np.array((needle_r*np.cos(theta), needle_r*np.sin(theta), z_lin))
             points = np.transpose(points)
             vectors = [[i, i+1] for i in range(n-1)]
             # colors = [[0.1, 0.1, 0.1] for i in range(n-1)]
@@ -94,7 +95,7 @@ class ReconstructAlign:
             # self.needle.colors = o3d.utility.Vector3dVector(colors)
             
             self.needle = self.needle_mesh(self.needle, radius=0.5)
-
+            self.needle_r = needle_r #mm
             self.needle_bound = self.generate_bounding_box(self.needle)
 
         else:
@@ -348,17 +349,25 @@ class ReconstructAlign:
     
         return dis
 
-    def transform(self, x, object_in, quat=False):
+    def transform(self, x, object_in, object_box, quat=False): #rotate and translate based on center of object bounding box
         object = copy.copy(object_in)
-        R_center = self.generate_bounding_box(object).center
+        
         if quat: # if rotation is a quaternion
             R = o3d.geometry.get_rotation_matrix_from_quaternion(x[3:])
         else:
             R = o3d.geometry.get_rotation_matrix_from_axis_angle(x[3:])
+
+        # rotate
+        # R_center = self.generate_bounding_box(object).center # if regenerating bounding box, but can flip coordinate directions
+        R_center = object_box.center
         T = x[:3]
         object_transform = object.rotate(R, center=R_center)
+        object_box_transform = object_box.rotate(R, center=R_center)
+
+        # translate
         object_transform = object_transform.translate(T)
-        return object_transform
+        object_box_transform = object_box_transform.translate(T)
+        return object_transform, object_box_transform
 
     def load_needle_pos(self, pos_file):
         import pickle
@@ -372,7 +381,7 @@ class ReconstructAlign:
         # self.needle_pos = np.array((needle_pos[:3], euler_angles))
 
 
-    def needle_align(self, x, quat=False):
+    def needle_align(self, x, quat=False): # uses the stored needle points
         # pdb.set_trace()
         T = x[:3]
         if quat: # if rotation is a quaternion
@@ -380,22 +389,23 @@ class ReconstructAlign:
         else:
             R = o3d.geometry.get_rotation_matrix_from_axis_angle(x[3:])
         self.needle.translate(T)
-        R_center = self.generate_bounding_box(self.needle).center
+        # R_center = self.generate_bounding_box(self.needle).center
+        self.needle_bound.translate(T)
+        R_center = self.needle_bound.center
         self.needle.rotate(R, center=R_center)
+        self.needle_bound.rotate(R, center=R_center)
 
 
-    def needle_thread_conn(self, needle, thread):
-        r = 8.2761 #mm
-        needle_conn_pt = np.array([r, -r/2, 0])
-        needle_box = self.generate_bounding_box(needle)
-        needle_R = needle_box.R
-        needle_center = needle_box.center
+    def needle_thread_conn(self, needle, needle_bound, thread, thread_box):
+        r = self.needle_r
+        needle_conn_pt = np.array([-r, -r/2, 0])
+        # needle_bound = self.generate_bounding_box(needle) # use the given box instead
+        needle_R = needle_bound.R
+        needle_center = needle_bound.center
         oriented_conn_pt = np.matmul(needle_R, needle_conn_pt)
-        needle.translate(thread.points[0] - needle_center - oriented_conn_pt)
-
-        # regenerate box for box center after translation
-        needle_box = self.generate_bounding_box(needle)
-        # needle_R = needle_box.R
+        T = thread.points[0] - needle_center - oriented_conn_pt
+        needle.translate(T)
+        needle_bound = needle_bound.translate(T)
 
         y_axis = thread.points[0] - thread.points[1]
         y_axis = y_axis / np.linalg.norm(y_axis)
@@ -414,11 +424,12 @@ class ReconstructAlign:
         # tangent_R = np.vstack([x_axis, y_axis, z_axis]).T
         # tangent_R = np.matmul(needle_R, tangent_R)
         needle.rotate(R, center=thread.points[0])
+        needle_bound.rotate(R, center=thread.points[0])
 
 
         # measure difference between end points of thread and mount point of needle
         # return distance -> minimize
-        return needle
+        return needle, needle_bound
 
     def align_vector_to_vector(self, v1, v2):
         """
@@ -449,29 +460,42 @@ class ReconstructAlign:
         return o3d.geometry.get_rotation_matrix_from_axis_angle(axis * angle)
 
 
-    def thread_transformation_dis(self, x, pcd, thread_input):
+    def thread_transformation_dis(self, x, pcd, thread, pcd_bound, thread_bound):
         # x is translation upon the origin and rotation based on an axis angle method
-        thread = copy.copy(thread_input)
         pcd_neighbors_og, pcd_neighbors_n_og, key_points_og = self.KNN_neighborhoods(pcd, thread)
-        R_center = self.generate_bounding_box(thread).center
         R = o3d.geometry.get_rotation_matrix_from_axis_angle(x[3:])
         T = x[:3]
-        thread_translate = thread.translate(T)
-        thread_transform = thread_translate.rotate(R, center=R_center)
+        
+        # translation
+        thread_trans = thread.translate(T)
+        thread_bound_trans = thread_bound.translate(T)
+
+        # rotation
+        # R_center = self.generate_bounding_box(thread).center
+        R_center = thread_bound_trans.center
+        thread_trans = thread_trans.rotate(R, center=R_center)
+        thread_bound_trans = thread_bound_trans.rotate(R, center=R_center)
         pcd_neighbors_trans, pcd_neighbors_n_trans, key_points_trans = \
-            self.KNN_neighborhoods(pcd, thread_transform)
+            self.KNN_neighborhoods(pcd, thread_trans)
 
         dis = self.norm_of_thread_to_neighbors(pcd_neighbors_trans, key_points_trans)
         dis_sum = np.sum(dis)
         return dis_sum
     
-    def thread_normal_const(self, x, pcd, thread_input ): # checks if the thread is above meat using normal vectors
+    def thread_normal_const(self, x, pcd, thread_input, pcd_bound, thread_bound): # checks if the thread is above meat using normal vectors
         thread = copy.copy(thread_input)
-        R_center = self.generate_bounding_box(thread).center
+        # R_center = self.generate_bounding_box(thread).center
+
         R = o3d.geometry.get_rotation_matrix_from_axis_angle(x[3:])
         T = x[:3]
-        thread_translate = thread.translate(T)
-        thread_transform = thread_translate.rotate(R, center=R_center)
+
+        # translation
+        thread_trans = thread.translate(T)
+        thread_bound_trans = thread_bound.translate(T)
+
+        # rotation
+        R_center = thread_bound_trans.center
+        thread_transform = thread_trans.rotate(R, center=R_center)
         pcd_neighbors_trans, pcd_neighbors_n_trans, key_points_trans = \
             self.KNN_neighborhoods(pcd, thread_transform)
         pcd_normals = np.average(pcd_neighbors_n_trans, axis=1)

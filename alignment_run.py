@@ -38,7 +38,7 @@ if __name__ == '__main__':
         Constraints.add_thread(thread_file)
         Constraints.add_needle(needle_file)
         Constraints.load_needle_pos(needle_pos_file)
-        Constraints.add_sudo_origin()
+        # Constraints.add_sudo_origin()
     else:
         npy_file = args.npy_file if args.npy_file is not None else "/media/emmah/PortableSSD/Arclab_data/trial_9_data/trial_9_RAFT_output_1/frame_000001.npy"
         png_file = args.png_file if args.png_file is not None else"/media/emmah/PortableSSD/Arclab_data/trial_9_data/trial_9_left_rgb/frame_000001.png"
@@ -51,13 +51,13 @@ if __name__ == '__main__':
 
         Constraints.add_meat(npy_file, png_file, mask_file)
         Constraints.add_thread(thread_file)
-        Constraints.add_needle(needle_file)
+        Constraints.add_needle(needle_file, needle_r=8.2761)
         Constraints.load_needle_pos(needle_pos_file)
-        Constraints.add_sudo_origin()
+        # Constraints.add_sudo_origin()
 
 
-    #mark the origin with a sphere
-    origin = Constraints.create_spheres_at_points([[0, 0, 0]])
+    # mark the origin with a sphere
+    # origin = Constraints.create_spheres_at_points([[0, 0, 0]])
 
 
     Constraints.meat, Constraints.spheres_one = Constraints.KNN_play(Constraints.meat, Constraints.thread, neighbors=10)
@@ -69,8 +69,9 @@ if __name__ == '__main__':
     # print("distance between meat and thread nodes", dis)
     
     change = [0, 0, 0, 0, 0, 0]
-    print(f"original distance is {Constraints.thread_transformation_dis(change, Constraints.meat, Constraints.thread)}")
-    objects = [Constraints.spheres_one, origin]
+    print(f"original distance is {Constraints.thread_transformation_dis(change, Constraints.meat, Constraints.thread, Constraints.meat_bound, Constraints.thread_bound)}")
+    # objects = [Constraints.spheres_one, origin]
+    objects = [Constraints.spheres_one]
     print("thread normal calcs original")
     Constraints.thread_normal_calcs(change, Constraints.meat, Constraints.thread)
 
@@ -82,7 +83,7 @@ if __name__ == '__main__':
     Constraints.meat, Constraints.spheres_one = Constraints.KNN_play(Constraints.meat, Constraints.thread)
 
     # move needle to the recorded position
-    Constraints.needle = Constraints.transform(Constraints.needle_pos, Constraints.needle, quat=True)
+    Constraints.needle, Constraints.needle_bound = Constraints.transform(Constraints.needle_pos, Constraints.needle, Constraints.needle_bound, quat=True)
 
     # Constraints.thread_trans = Constraints.align_objects(Constraints.meat, Constraints.thread, Constraints.meat_bound.center, Constraints.thread_bound.center)
     # Constraints.meat, Constraints.spheres_two = Constraints.KNN_play(Constraints.meat, Constraints.thread_trans)
@@ -103,9 +104,9 @@ if __name__ == '__main__':
 
     # depth alignment (runs twice to get closer to the meat)
     change = Constraints.depth_solver(Constraints.meat, Constraints.thread)
-    Constraints.meat = Constraints.transform(change, Constraints.meat)
+    Constraints.meat,Constraints.meat_bound = Constraints.transform(change, Constraints.meat, Constraints.meat_bound)
     change = Constraints.depth_solver(Constraints.meat, Constraints.thread)
-    Constraints.meat = Constraints.transform(change, Constraints.meat)
+    Constraints.meat, Constraints.meat_bound = Constraints.transform(change, Constraints.meat, Constraints.meat_bound)
 
 
 
@@ -152,7 +153,7 @@ if __name__ == '__main__':
     objects = [Constraints.spheres_one]
     Constraints.visualize_objects(objects)
 
-    Constraints.needle = Constraints.needle_thread_conn(Constraints.needle, Constraints.thread)
+    Constraints.needle, Constraints.needle_bound = Constraints.needle_thread_conn(Constraints.needle, Constraints.needle_bound, Constraints.thread, Constraints.thread_bound)
 
     Constraints.visualize_objects(objects)
 
