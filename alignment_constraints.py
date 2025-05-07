@@ -213,21 +213,10 @@ class ReconstructAlign:
         # pcd = o3d.geometry.PointCloud.random_down_sample(pcd, 0.1)
         self.meat_init = True
 
-    def add_sudo_origin(self):
+    def add_origin(self):
         assert(self.origin_init == False)
-        x_cylinder = o3d.geometry.TriangleMesh.create_cylinder(radius=0.3,
-                                                          height=16.0)
-
-        origin = o3d.geometry.TriangleMesh.create_coordinate_frame(
+        self.origin = o3d.geometry.TriangleMesh.create_coordinate_frame(
                 size=0.6, origin=[0, 0, 0]).scale(50.0, center=(0, 0, 0))
-        # double check that the coordinate frame is the same as the camera frame, if it is, then I don't have to create my own coordinate points
-        y_R = x_cylinder.get_rotation_matrix_from_xyz((0, np.pi / 2, 0))
-        z_R = x_cylinder.get_rotation_matrix_from_xyz((np.pi/2, 0, 0))
-
-        y_cylinder = copy.copy(x_cylinder).rotate(y_R, center=(0, 0, 0))
-        z_cylinder = copy.copy(x_cylinder).rotate(z_R, center=(0, 0, 0))
-
-        self.origin = [x_cylinder, y_cylinder, z_cylinder, origin] 
         self.origin_init = True
 
 
@@ -630,7 +619,7 @@ class ReconstructAlign:
         if self.thread_init == True: self.vis_objects.append(self.thread)
         if self.meat_init == True: self.vis_objects.append(self.meat) 
         if self.needle_init == True: self.vis_objects.append(self.needle)
-        if self.origin_init == True: self.vis_objects.extend(self.origin)
+        if self.origin_init == True: self.vis_objects.append(self.origin)
         if self.thread_bound is not None: self.vis_objects.append(self.thread_bound)
         if self.meat_bound is not None: self.vis_objects.append(self.meat_bound)
         if self.needle_bound is not None: self.vis_objects.append(self.needle_bound)
