@@ -59,6 +59,9 @@ if __name__ == '__main__':
     # mark the origin with a sphere
     # origin = Constraints.create_spheres_at_points([[0, 0, 0]])
 
+    # move needle to the recorded position
+    Constraints.needle, Constraints.needle_bound = Constraints.transform(Constraints.needle_pos, Constraints.needle, Constraints.needle_bound, quat=True)
+
 
     Constraints.meat, Constraints.thread_hl = Constraints.KNN_play(Constraints.meat, Constraints.thread, neighbors=10)
     meat_neighborhoods, _, thread_points = Constraints.KNN_neighborhoods(Constraints.meat, Constraints.thread)
@@ -75,15 +78,15 @@ if __name__ == '__main__':
     print("thread normal calcs original")
     Constraints.thread_normal_calcs(change, Constraints.meat, Constraints.thread)
 
+    # visualize one
     Constraints.visualize_objects(objects)
 
     # check if first item of thread is at needle
     Constraints.flip_thread(thread_file)
+    # Constraints.thread, Constraints.thread_bound = Constraints.thread_meat_orient(Constraints.meat, Constraints.thread, Constraints.meat_bound, Constraints.thread_bound)
+
     # redraw spheres and neighbors
     Constraints.meat, Constraints.thread_hl = Constraints.KNN_play(Constraints.meat, Constraints.thread)
-
-    # move needle to the recorded position
-    Constraints.needle, Constraints.needle_bound = Constraints.transform(Constraints.needle_pos, Constraints.needle, Constraints.needle_bound, quat=True)
 
     # Constraints.thread_trans = Constraints.align_objects(Constraints.meat, Constraints.thread, Constraints.meat_bound.center, Constraints.thread_bound.center)
     # Constraints.meat, Constraints.spheres_two = Constraints.KNN_play(Constraints.meat, Constraints.thread_trans)
@@ -149,12 +152,14 @@ if __name__ == '__main__':
     # print("dis norm: ", np.linalg.norm(dis))
     # print("dis_trans norm:",np.linalg.norm(dis_trans))
     
+    # visualize two
     # objects = [Constraints.thread_hl, Constraints.spheres_two, Constraints.thread_trans]
     objects = [Constraints.thread_hl]
     Constraints.visualize_objects(objects)
 
     Constraints.needle, Constraints.needle_bound = Constraints.needle_thread_conn(Constraints.needle, Constraints.needle_bound, Constraints.thread, Constraints.thread_bound)
 
+    # visualize three
     Constraints.visualize_objects(objects)
 
 
@@ -167,4 +172,11 @@ python alignment_run.py --npy_file /media/emmah/PortableSSD/Arclab_data/thread_m
 threads:
 trial 20 doesn't have great thread reconstruction
 trial 30 doesn't have a good depth reconstruction
+
+trial 22 has the right shape, but the height is off, so the optimal selection point is going to be wrong
+trial 23 is pretty accurate, could use to select best point
+trial 24 has an accurate good grasping point, but the thread-needle end points downwards (wrong)
+trial 25 good reconstruction in half of the thread, but the thread-needle end points downwards(wrong)
+trial 26 has same issue as 
+\
 '''

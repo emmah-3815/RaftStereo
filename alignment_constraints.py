@@ -574,7 +574,14 @@ class ReconstructAlign:
 
         return sum_error, normals
 
-    
+    def thread_meat_orient(self, pcd, thread, pcd_bound, thread_bound):
+
+        R = -np.linalg.inv(pcd_bound.R).T
+
+        thread.rotate(R, center=thread_bound.center)
+        thread_bound.rotate(R, center=thread_bound.center)
+        return thread, thread_bound
+
 
     def slsqp_solver(self, pcd, thread):
         # objective function is to minimize the distance between the thread nodes and their knn neighbors on the meat, 
