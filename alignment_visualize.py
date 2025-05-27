@@ -23,14 +23,12 @@ if __name__ == '__main__':
     Constraints.init_camera_params(args.calib)
     Constraints.init_object_params(args.mask_erode)
 
-    npy_file = args.npy_file if args.npy_file is not None else "/media/emmah/PortableSSD/Arclab_data/trial_9_data/trial_9_RAFT_output_1/frame_000001.npy"
-    png_file = args.png_file if args.png_file is not None else"/media/emmah/PortableSSD/Arclab_data/trial_9_data/trial_9_left_rgb/frame_000001.png"
+    npy_file = args.npy_file
+    png_file = args.png_file
     mask_file = args.meat_mask_file if args.meat_mask_file is not None else None
-    mask_file = "/media/emmah/PortableSSD/Arclab_data/trial_9_data/trial_9_single_arm_no_tension_masks_meat_left/trial_9_single_arm_no_tension_masks_meat/frame0001.png" \
-                if args.use_default_meat_mask and mask_file == None else None
-    thread_file = args.thread if args.thread is not None else "/media/emmah/PortableSSD/Arclab_data/paper_singular_needle/frame_000000.npy"
-    needle_file = args.needle if args.needle is not None else "/media/emmah/PortableSSD/Arclab_data/Needle_R_01146.obj"
-    needle_pos_file = args.needle_pos if args.needle_pos is not None else"/home/emmah/ARClab/RAFT-Stereo/alignment_dataset/trial_20_needle_pose.pkl"
+    thread_file = args.thread
+    needle_file = args.needle
+    needle_pos_file = args.needle_pos
 
     Constraints.add_meat(npy_file, png_file, mask_file)
     Constraints.add_thread(thread_file)

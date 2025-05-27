@@ -1,6 +1,7 @@
 from alignment_constraints import ReconstructAlign
 import argparse
 import os
+import pdb
 
 Constraints = ReconstructAlign()
 
@@ -11,6 +12,8 @@ if __name__ == '__main__':
     parser.add_argument('--npy_file', help="path_to_npy_file") # , default="/media/emmah/PortableSSD/Arclab_data/trial_9_data/trial_9_RAFT_output_1/frame_000001.npy")
     parser.add_argument('--png_file', help="path_to_png_file_for_visualization") # , default="/media/emmah/PortableSSD/Arclab_data/trial_9_data/trial_9_left_rgb/frame_000001.png")
     parser.add_argument('--meat_mask_file', help="path_to_meat_mask") # , default="/media/emmah/PortableSSD/Arclab_data/trial_9_data/trial_9_single_arm_no_tension_masks_meat_left/trial_9_single_arm_no_tension_masks_meat/frame0001.png")
+    parser.add_argument('--thread_mask_file', help="path_to_thread_mask") # , default="/media/emmah/PortableSSD/Arclab_data/trial_9_data/trial_9_single_arm_no_tension_masks_meat_left/trial_9_single_arm_no_tension_masks_meat/frame0001.png")
+    parser.add_argument('--needle_mask_file', help="path_to_needle_mask") # , default="/media/emmah/PortableSSD/Arclab_data/trial_9_data/trial_9_single_arm_no_tension_masks_meat_left/trial_9_single_arm_no_tension_masks_meat/frame0001.png")
     parser.add_argument('--use_default_meat_mask', help="if no meat mask is provided, use the default?", action='store_true', default=False)
     parser.add_argument('--thread', help='path to thread array data') # , default='/media/emmah/PortableSSD/Arclab_data/paper_singular_needle/frame_000000.npy')
     parser.add_argument('--mask_erode', help='choose to erode mask for less chance of flying points', default=True)
@@ -19,6 +22,7 @@ if __name__ == '__main__':
     parser.add_argument('--calib', help="camera calibration yaml file", default=os.path.dirname(__file__) + "/assets/camera_calibration_fei.yaml")
     parser.add_argument('--needle', help='path to needle obj file') # , default='/media/emmah/PortableSSD/Arclab_data/paper_singular_needle/frame_000000.npy')
     parser.add_argument('--needle_pos', help='path to needle pos pkl file') # , default='/media/emmah/PortableSSD/Arclab_data/paper_singular_needle/frame_000000.npy')
+    parser.add_argument('--reliability', help='path to thread reliabilty file') # , default='/media/emmah/PortableSSD/Arclab_data/paper_singular_needle/frame_000000.npy')
 
 
     args = parser.parse_args()
@@ -43,13 +47,20 @@ if __name__ == '__main__':
         npy_file = args.npy_file if args.npy_file is not None else "/media/emmah/PortableSSD/Arclab_data/trial_9_data/trial_9_RAFT_output_1/frame_000001.npy"
         png_file = args.png_file if args.png_file is not None else"/media/emmah/PortableSSD/Arclab_data/trial_9_data/trial_9_left_rgb/frame_000001.png"
         mask_file = args.meat_mask_file if args.meat_mask_file is not None else None
-        mask_file = "/media/emmah/PortableSSD/Arclab_data/trial_9_data/trial_9_single_arm_no_tension_masks_meat_left/trial_9_single_arm_no_tension_masks_meat/frame0001.png" \
+        meat_mask_file = "/media/emmah/PortableSSD/Arclab_data/trial_9_data/trial_9_single_arm_no_tension_masks_meat_left/trial_9_single_arm_no_tension_masks_meat/frame0001.png" \
                     if args.use_default_meat_mask and mask_file == None else None
+        thread_mask_file = args.thread_mask_file if args.thread_mask_file is not None else None
+        needle_mask_file = args.needle_mask_file if args.needle_mask_file is not None else None
+     
         thread_file = args.thread if args.thread is not None else "/media/emmah/PortableSSD/Arclab_data/paper_singular_needle/frame_000000.npy"
         needle_file = args.needle if args.needle is not None else "/media/emmah/PortableSSD/Arclab_data/Needle_R_01146.obj"
         needle_pos_file = args.needle_pos if args.needle_pos is not None else"/home/emmah/ARClab/RAFT-Stereo/alignment_dataset/trial_20_needle_pose.pkl"
 
-        Constraints.add_meat(npy_file, png_file, mask_file)
+        # reliability
+        reliability_file = args.reliability if args.reliability is not None else None
+
+        # pdb.set_trace()
+        Constraints.add_meat(npy_file, png_file, meat_mask_file, thread_mask_file, needle_mask_file)
         Constraints.add_thread(thread_file)
         Constraints.add_needle(needle_file, needle_r=8.2761)
         Constraints.load_needle_pos(needle_pos_file)
@@ -64,7 +75,7 @@ if __name__ == '__main__':
 
 
     Constraints.meat, Constraints.thread_hl = Constraints.KNN_play(Constraints.meat, Constraints.thread, neighbors=10)
-    meat_neighborhoods, _, thread_points = Constraints.KNN_neighborhoods(Constraints.meat, Constraints.thread)
+    meat_neighborhoods, _, thread_points = Constraints.KNN_neighborhoods(Constraints.meat, Constraints.thread, 10)
     # pdb.set_trace()
 
     # distance between thread and meat nodes
@@ -85,9 +96,17 @@ if __name__ == '__main__':
     Constraints.flip_thread(thread_file)
     # Constraints.thread, Constraints.thread_bound = Constraints.thread_meat_orient(Constraints.meat, Constraints.thread, Constraints.meat_bound, Constraints.thread_bound)
 
+    # depth alignment (runs twice to get closer to the meat)
+    change = Constraints.depth_solver(Constraints.meat, Constraints.thread)
+    Constraints.meat,Constraints.meat_bound = Constraints.transform(change, Constraints.meat, Constraints.meat_bound)
+    change = Constraints.depth_solver(Constraints.meat, Constraints.thread)
+    Constraints.meat, Constraints.meat_bound = Constraints.transform(change, Constraints.meat, Constraints.meat_bound)
+
     # redraw spheres and neighbors
     Constraints.meat, Constraints.thread_hl = Constraints.KNN_play(Constraints.meat, Constraints.thread)
 
+    Constraints.rely_spheres = Constraints.paint_reliability(Constraints.thread, reliability_file)
+    Constraints.grasp_spheres = Constraints.grasp(Constraints.meat, Constraints.thread, Constraints.reliability)
     # Constraints.thread_trans = Constraints.align_objects(Constraints.meat, Constraints.thread, Constraints.meat_bound.center, Constraints.thread_bound.center)
     # Constraints.meat, Constraints.spheres_two = Constraints.KNN_play(Constraints.meat, Constraints.thread_trans)
 
@@ -105,11 +124,6 @@ if __name__ == '__main__':
     '''
 
 
-    # depth alignment (runs twice to get closer to the meat)
-    change = Constraints.depth_solver(Constraints.meat, Constraints.thread)
-    Constraints.meat,Constraints.meat_bound = Constraints.transform(change, Constraints.meat, Constraints.meat_bound)
-    change = Constraints.depth_solver(Constraints.meat, Constraints.thread)
-    Constraints.meat, Constraints.meat_bound = Constraints.transform(change, Constraints.meat, Constraints.meat_bound)
 
 
 
@@ -131,10 +145,6 @@ if __name__ == '__main__':
         Constraints.thread_old = Constraints.thread_trans
     '''
 
-
-
-
-
     # transform test + distance calc test
     # change = [x, y, z, rz, ry, rz] confirmed moves the thread approprately 
     # and calculates thread node to neighbor avg distance
@@ -154,7 +164,8 @@ if __name__ == '__main__':
     
     # visualize two
     # objects = [Constraints.thread_hl, Constraints.spheres_two, Constraints.thread_trans]
-    objects = [Constraints.thread_hl]
+    # objects = [Constraints.thread_hl]
+    objects = [Constraints.rely_spheres, Constraints.grasp_spheres]
     Constraints.visualize_objects(objects)
 
     Constraints.needle, Constraints.needle_bound = Constraints.needle_thread_conn(Constraints.needle, Constraints.needle_bound, Constraints.thread, Constraints.thread_bound)

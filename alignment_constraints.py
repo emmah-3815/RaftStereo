@@ -36,6 +36,7 @@ class ReconstructAlign:
         self.t_m_contact = None
         self.vis_objects = []
         self.needle_r = None
+        self.relibility = None
 
     def init_camera_params(self, calib) -> None:
         # camera parameters on non-rectified images
@@ -72,15 +73,12 @@ class ReconstructAlign:
     def add_needle(self, needle_obj_path:str=None, needle_r=None, sudo_needle=True):
         assert(self.needle_init == False)
         assert((needle_obj_path!=None) or (sudo_needle==True))
-        needle = o3d.io.read_triangle_mesh(needle_obj_path)
-        self.needle = needle
-        self.needle = self.needle.scale(1000.0, center=(0, 0, 0))
-        self.needle_bound = self.generate_bounding_box(self.needle)
         # add addtional modifications here
         # instead of adding the needle, use a set of points to indicate needle instead, so that the coordinate frame is given to match with the camera
         if sudo_needle:
             n = 20
-            theta = np.linspace(np.pi/2, np.pi*3/2, n)
+            theta = np.linspace(np.pi/2, np.pi*3/2, n) # orietation suppsetly based on paper
+            # theta = np.linspace(-np.pi/2, np.pi/2, n)
             z_lin = np.linspace(0, 0.01, n)
 
             points = np.array((needle_r*np.cos(theta), needle_r*np.sin(theta), z_lin))
@@ -162,11 +160,12 @@ class ReconstructAlign:
             self.add_thread(thread_file_path)
 
 
-    def add_meat(self, meat_npy_path, meat_png_path, meat_mask_file=None) -> o3d.geometry.PointCloud:
+    def add_meat(self, meat_npy_path, meat_png_path, meat_mask_file=None, thread_mask_file=None, needle_mask_file=None) -> o3d.geometry.PointCloud:
         assert(self.meat_init == False)
 
         disp = np.load(meat_npy_path)
         image = imread(meat_png_path)
+
 
         # inverse-project
         depth = (self.fx * self.baseline) / (-disp + (self.cx2 - self.cx1))
@@ -176,28 +175,27 @@ class ReconstructAlign:
 
         # Remove flying points
         flying_mask = np.ones((H, W), dtype=bool)
-        # flying_mask[1:][np.abs(depth[1:] - depth[:-1]) > 1] = False
-        # flying_mask[:,1:][np.abs(depth[:,1:] - depth[:,:-1]) > 1] = False
+        flying_mask[1:][np.abs(depth[1:] - depth[:-1]) > 1] = False
+        flying_mask[:,1:][np.abs(depth[:,1:] - depth[:,:-1]) > 1] = False
 
 
-        # mask meat only
+        meat_mask = imread(meat_mask_file).any(axis=2) if meat_mask_file is not None else np.ones((H, W), dtype=bool)
+        thread_mask = imread(thread_mask_file)==0 if thread_mask_file is not None else np.ones((H, W), dtype=bool) # equal to zero to flip mask
+        needle_mask = imread(needle_mask_file)==0 if needle_mask_file is not None else np.ones((H, W), dtype=bool) # equal to zero to flip mask
+        # pdb.set_trace()
 
-        if meat_mask_file == "None":
-            meat_mask_file = None
+        # combine all masks
+        mask = meat_mask * thread_mask * needle_mask
 
-        if meat_mask_file != None:
-            meat_mask = imread(meat_mask_file)
-            if self.mask_erode is True:
-                kernel = np.ones((5,5),np.uint8)
-                meat_mask = cv.erode(meat_mask, kernel, iterations=1)
-                # imgplot = plt.imshow(meat_mask)
-                # plt.show()
+        if self.mask_erode is True:
+            kernel_size = 3
+            kernel = np.ones(kernel_size,np.uint8)
+            mask = cv.erode(mask.astype(np.uint8), kernel, iterations=1)
+            # imgplot = plt.imshow(meat_mask)
+            # plt.show()
 
-            meat_mask = meat_mask > 0
-            mask = meat_mask * flying_mask
-        else:
-            mask = flying_mask
-
+        mask = mask > 0
+        mask = mask * (np.array(flying_mask))
 
         points = points_grid.transpose(1,2,0)[mask]
         colors = image[mask].astype(np.float64) / 255
@@ -205,6 +203,9 @@ class ReconstructAlign:
         self.meat = o3d.geometry.PointCloud()
         self.meat.points = o3d.utility.Vector3dVector(points)
         self.meat.colors = o3d.utility.Vector3dVector(colors)
+        cl, ind = self.meat.remove_statistical_outlier(nb_neighbors=10, std_ratio=2.0)
+        self.meat = self.meat.select_by_index(ind)
+
         o3d.geometry.PointCloud.estimate_normals(self.meat)
         o3d.geometry.PointCloud.orient_normals_towards_camera_location(self.meat)
 
@@ -231,8 +232,8 @@ class ReconstructAlign:
         thread_pts = thread.points
 
         # obtain the mean position of the meat neighborhoods
-        pcd_neighbors_og, pcd_neighbors_n_og, key_points_og = self.KNN_neighborhoods(pcd, thread, neighbors=3)
-        neighbor_z_means = np.mean(pcd_neighbors_og[:, :, 2], axis=1)
+        pcd_neighbors_og, pcd_neighbors_n_og, key_points_og = self.KNN_neighborhoods(pcd, thread, neighbors=100)
+        neighbor_z_means = np.max(pcd_neighbors_og[:, :, 2], axis=1)
 
         # find the lowest point of the thread with respect to the closest neighborhood on the meat
         z_dis = neighbor_z_means -  np.array(thread_pts)[:, 2]
@@ -306,11 +307,24 @@ class ReconstructAlign:
             color = red
         return pcd, spheres
 
-    
+    def paint_reliability(self, thread, reliability_file):
+        self.reliability = np.load(reliability_file, allow_pickle=True)
+        # reliability /= np.max(reliability) 
+
+        assert(len(thread.points) == self.reliability.size) # same amount of points
+
+        points = thread.points
+        spheres = o3d.geometry.TriangleMesh()
+        for i, point in enumerate(points):
+            sphere = self.create_spheres_at_points([point], radius=0.5, color=[1-self.reliability[i], self.reliability[i], 0])
+            spheres += sphere
+        return spheres
+
+
+
     def KNN_neighborhoods(self, pcd, thread, neighbors=1):
         key_points = thread.points
         pcd_tree = o3d.geometry.KDTreeFlann(pcd)
-        neighbors = neighbors
         pcd_neighbors = []
         pcd_neighbors_normal = []
         pcd_idx = []
@@ -363,7 +377,7 @@ class ReconstructAlign:
         with open(pos_file, 'rb') as f:
             data = pickle.load(f)
 
-        self.needle_pos = np.array([data.get('x'), data.get('y'), data.get('z'), data.get('qw'), data.get('qx'), data.get('qy'), data.get('qz')]) * 1000
+        self.needle_pos = np.array([data.get('x')*1000, data.get('y')*1000, data.get('z')*1000, data.get('qw'), data.get('qx'), data.get('qy'), data.get('qz')])
 
         # rotation_matrix = o3d.geometry.get_rotation_matrix_from_quaternion(needle_pos[3:])
         # euler_angles = o3d.geometry.get_euler_angles_from_matrix(rotation_matrix)
@@ -387,37 +401,21 @@ class ReconstructAlign:
 
     def needle_thread_conn(self, needle, needle_bound, thread, thread_box):
         r = self.needle_r
-        needle_conn_pt = np.array([-r, -r/2, 0])
+        needle_conn_pt = np.array([-r, -r/2, 0]) # point of connection from center of needle
         # needle_bound = self.generate_bounding_box(needle) # use the given box instead
-        needle_R = needle_bound.R
-        needle_center = needle_bound.center
-        oriented_conn_pt = np.matmul(needle_R, needle_conn_pt)
-        T = thread.points[0] - needle_center - oriented_conn_pt
+        needle_R = needle_bound.R # needle rotation matrix
+        needle_center = needle_bound.center # position of needle center
+        oriented_conn_pt = np.matmul(needle_R, needle_conn_pt) # oriented connection point
+        T = thread.points[0] - needle_center - oriented_conn_pt # how much to translate needle to match connection point to thread
         needle.translate(T)
         needle_bound = needle_bound.translate(T)
 
-        y_axis = thread.points[0] - thread.points[1]
+        y_axis = thread.points[0] - thread.points[1] # tangent vector to thread
         y_axis = y_axis / np.linalg.norm(y_axis)
-        R = self.align_vector_to_vector(needle_R[:, 1], y_axis)
-        # x_axis = (0, 1, -1/3*y_axis[1])
-        # z_axis = np.array([-y_axis[1], y_axis[0], 0])
-        # z_axis = z_axis / np.linalg.norm(z_axis)
-        # x_axis = np.cross(y_axis, z_axis)
-        # x_axis = x_axis / np.linalg.norm(x_axis)
-
-        # R = needle_R + np.zeros(3)
-        # pdb.set_trace()
-        # tangent_ro = np.matmul(needle_R, needle_R[:, 1] - tangent_dir) # y axis need to match
-        # tangent_ro = needle_R[:, 1] - tangent_dir # y axis need to match
-        # tangent_R = o3d.geometry.get_rotation_matrix_from_axis_angle(tangent_ro)
-        # tangent_R = np.vstack([x_axis, y_axis, z_axis]).T
-        # tangent_R = np.matmul(needle_R, tangent_R)
+        R = self.align_vector_to_vector(needle_R[:, 1], y_axis) # rotation matrix to rotate needle to match thread
         needle.rotate(R, center=thread.points[0])
         needle_bound.rotate(R, center=thread.points[0])
 
-
-        # measure difference between end points of thread and mount point of needle
-        # return distance -> minimize
         return needle, needle_bound
 
     def align_vector_to_vector(self, v1, v2):
@@ -605,6 +603,48 @@ class ReconstructAlign:
         print("normal constraint results", self.thread_normal_calcs(res.x, pcd, thread))
         return res.x
 
+    def grasp(self, pcd, thread, reliability, rely_thresh=0.7, dis_thresh=2, velo_thresh=0.3):
+        assert(len(thread.points) == self.reliability.size)
+        assert(self.thread_init and self.meat_init and reliability is not None)
+        points = np.asarray(thread.points)
+        candidates = np.ones_like(points[:, 0])
+
+        # pdb.set_trace()        
+        # prune unreliable points
+        reliability[reliability<rely_thresh] = 0
+        candidates *= reliability
+
+        # prune points too close to meat
+        meat_neighborhoods, _, thread_points = self.KNN_neighborhoods(pcd, thread, 10)
+        dis = self.norm_of_thread_to_neighbors(meat_neighborhoods, thread_points)
+        dis_rely = dis > dis_thresh
+        candidates *= dis_rely
+
+        # prune points too vertical
+        z_velocity = points[1:, 2] - points[:-1, 2]
+        z_velocity = np.append(z_velocity, velo_thresh) 
+        z_velocity = np.abs(z_velocity) + 1e-7
+
+        # multiple by velocity method
+        # z_velocity[z_velocity > velo_thresh] = 0
+        # candidates *= (1/z_velocity) * np.max(z_velocity)
+
+        # filter by velocity thresh only
+        velo_rely = z_velocity < velo_thresh
+        candidates *= velo_rely
+
+        # # top three best points
+        # top3_idx = np.argsort(candidates)[-3:][::-1]
+        # top3 = points[top3_idx]
+
+        top = points[candidates!=0]
+
+        spheres = o3d.geometry.TriangleMesh()
+        for i, point in enumerate(top):
+            sphere = self.create_spheres_at_points([point], radius=2, color=[0, 0, 1])
+            spheres += sphere
+        return spheres
+
     
     def create_spheres_at_points(self, points, radius=0.5, color=[1, 0, 0]):
         spheres = o3d.geometry.TriangleMesh()
@@ -640,7 +680,6 @@ class ReconstructAlign:
         # opt.show_coordinate_frame = True
         # red is x, green is y, blue is z
         vis.run()
-
 
     '''
     point1 = [(177.4150316259643, 80.06868164738896, 82.32650976966762),
