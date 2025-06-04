@@ -66,7 +66,8 @@ if __name__ == '__main__':
         Constraints.load_needle_pos(needle_pos_file)
         Constraints.load_thread_specs(thread_specs_file)
         Constraints.add_origin()
-
+        Constraints.add_lower_bound_spline()
+        Constraints.add_upper_bound_spline()
 
     # mark the origin with a sphere
     # origin = Constraints.create_spheres_at_points([[0, 0, 0]])
@@ -86,7 +87,8 @@ if __name__ == '__main__':
     change = [0, 0, 0, 0, 0, 0]
     print(f"original distance is {Constraints.thread_transformation_dis(change, Constraints.meat, Constraints.thread, Constraints.meat_bound, Constraints.thread_bound)}")
     # objects = [Constraints.thread_hl, origin]
-    objects = [Constraints.thread_hl]
+    objects = [Constraints.thread_hl, Constraints.lower_bound_3d, Constraints.upper_bound_3d]
+    # objects = [Constraints.lower_bound_3d]
     print("thread normal calcs original")
     Constraints.thread_normal_calcs(change, Constraints.meat, Constraints.thread)
 
@@ -107,7 +109,7 @@ if __name__ == '__main__':
     Constraints.meat, Constraints.thread_hl = Constraints.KNN_play(Constraints.meat, Constraints.thread)
 
     Constraints.rely_spheres = Constraints.paint_reliability(Constraints.thread)
-    Constraints.grasp_spheres = Constraints.grasp(Constraints.meat, Constraints.thread, Constraints.thread_reliability)
+    Constraints.grasp_spheres = Constraints.grasp(Constraints.meat, Constraints.thread)
     # Constraints.thread_trans = Constraints.align_objects(Constraints.meat, Constraints.thread, Constraints.meat_bound.center, Constraints.thread_bound.center)
     # Constraints.meat, Constraints.spheres_two = Constraints.KNN_play(Constraints.meat, Constraints.thread_trans)
 
@@ -166,7 +168,7 @@ if __name__ == '__main__':
     # visualize two
     # objects = [Constraints.thread_hl, Constraints.spheres_two, Constraints.thread_trans]
     # objects = [Constraints.thread_hl]
-    objects = [Constraints.rely_spheres, Constraints.grasp_spheres]
+    objects = [Constraints.rely_spheres, Constraints.grasp_spheres, Constraints.upper_bound_3d]
     Constraints.visualize_objects(objects)
 
     Constraints.needle, Constraints.needle_bound = Constraints.needle_thread_conn(Constraints.needle, Constraints.needle_bound, Constraints.thread, Constraints.thread_bound)

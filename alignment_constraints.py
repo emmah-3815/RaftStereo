@@ -8,6 +8,8 @@ import copy
 import pdb
 from scipy.optimize import Bounds, minimize
 import pickle
+import scipy.interpolate as interp
+
 
 
 
@@ -38,8 +40,8 @@ class ReconstructAlign:
         self.vis_objects = []
         self.needle_r = None
         self.thread_reliability = None
-        self.thread_lower_constr = None
-        self.thread_upper_constr = None
+        self.lower_bound_3d = None
+        self.upper_bound_3d = None
 
 
     def init_camera_params(self, calib) -> None:
@@ -145,12 +147,30 @@ class ReconstructAlign:
         colors = [[0, 0, 0] for i in range(n-1)]
 
         self.thread = o3d.geometry.LineSet()
+        # pdb.set_trace()
         self.thread.points = o3d.utility.Vector3dVector(thread_data)
         self.thread.lines = o3d.utility.Vector2iVector(vectors)
         self.thread.colors = o3d.utility.Vector3dVector(colors)
 
         self.thread_bound = self.generate_bounding_box(self.thread)
         self.thread_init = True
+
+    def load_thread_specs(self, data_file):
+        with open(data_file, 'rb') as f:
+            data = pickle.load(f)
+
+        self.thread_reliability = data.get('reliability')
+        thread_lower_constr = data.get('lower_constr')
+        thread_upper_constr = data.get('upper_constr')
+
+        self.thread_lower = thread_lower_constr
+        self.thread_upper = thread_upper_constr
+
+        # bound_idx = np.linspace(0, 1, len(thread_lower_constr))
+        # lower_f = interp.interp1d(bound_idx, thread_lower_constr)
+        # upper_f = interp.interp1d(bound_idx, thread_upper_constr)
+        # self.thread_lower = lower_f(np.linspace(0, 1, len(self.thread.points))) # get lower const at key points
+        # self.thread_upper = upper_f(np.linspace(0, 1, len(self.thread.points))) # get upper const at key points
 
     def flip_thread(self, thread_file_path:str):
         assert(self.thread_init == True)
@@ -163,6 +183,53 @@ class ReconstructAlign:
                 np.save(f, thread_data)
             self.add_thread(thread_file_path)
 
+    def add_lower_bound_spline(self):
+        thread = self.thread
+        bound = self.thread_lower
+        # pdb.set_trace()
+        # assert(len(np.asarray(thread.points)) == len(np.asarray(bound)))
+        if bound.shape[1] != 3:
+            bound = np.transpose(bound)
+            assert(bound.shape[1] == 3)
+        bound_points = bound        
+        
+        n = bound.shape[0]
+        vectors = [[i, i+1] for i in range(n-1)]
+        colors = [[0, 0, 1] for i in range(n-1)]
+
+        # bound_points = copy.copy(np.asarray(thread.points))
+        # bound_points[:, 2] = bound
+        # pdb.set_trace()
+
+        self.lower_bound_3d = o3d.geometry.LineSet()
+        self.lower_bound_3d.points = o3d.utility.Vector3dVector(bound_points)
+        self.lower_bound_3d.lines = o3d.utility.Vector2iVector(vectors)
+        self.lower_bound_3d.colors = o3d.utility.Vector3dVector(colors)
+
+        # self.lower_bound_3d_bound = self.generate_bounding_box(self.lower_bound_3d)
+
+    def add_upper_bound_spline(self):
+        thread = self.thread
+        bound = self.thread_upper
+        # pdb.set_trace()
+        # assert(len(np.asarray(thread.points)) == len(np.asarray(bound)))
+        if bound.shape[1] != 3:
+            bound = np.transpose(bound)
+            assert(bound.shape[1] == 3)
+        bound_points = bound
+        
+        n = bound.shape[0]
+        vectors = [[i, i+1] for i in range(n-1)]
+        colors = [[1, 0, 1] for i in range(n-1)]
+
+        # bound_points = copy.copy(np.asarray(thread.points))
+        # bound_points[:, 2] = bound
+        self.upper_bound_3d = o3d.geometry.LineSet()
+        self.upper_bound_3d.points = o3d.utility.Vector3dVector(bound_points)
+        self.upper_bound_3d.lines = o3d.utility.Vector2iVector(vectors)
+        self.upper_bound_3d.colors = o3d.utility.Vector3dVector(colors)
+
+        # self.lower_bound_3d_bound = self.generate_bounding_box(self.lower_bound_3d)
 
     def add_meat(self, meat_npy_path, meat_png_path, meat_mask_file=None, thread_mask_file=None, needle_mask_file=None) -> o3d.geometry.PointCloud:
         assert(self.meat_init == False)
@@ -386,13 +453,8 @@ class ReconstructAlign:
         # euler_angles = o3d.geometry.get_euler_angles_from_matrix(rotation_matrix)
         # self.needle_pos = np.array((needle_pos[:3], euler_angles))
 
-    def load_thread_specs(self, data_file):
-        with open(data_file, 'rb') as f:
-            data = pickle.load(f)
 
-        self.thread_reliability = data.get('reliability')
-        self.thread_lower_constr = data.get('lower_constr')
-        self.thread_upper_constr = data.get('upper_constr')
+
 
     def needle_align(self, x, quat=False): # uses the stored needle points
         # pdb.set_trace()
@@ -613,13 +675,18 @@ class ReconstructAlign:
         print("normal constraint results", self.thread_normal_calcs(res.x, pcd, thread))
         return res.x
 
-    def grasp(self, pcd, thread, reliability, rely_thresh=0.5, dis_thresh=2, velo_thresh=0.7):
-        assert(len(thread.points) == self.thread_reliability.size)
+    def grasp(self, pcd, thread, rely_thresh=0.5, dis_thresh=2, velo_thresh=0.7):
+        reliability = self.thread_reliability
+        assert(len(thread.points) == reliability.size)
         assert(self.thread_init and self.meat_init and reliability is not None)
+        
         points = np.asarray(thread.points)
         candidates = np.ones_like(points[:, 0])
+        # lower_bound_points = np.asarray(self.lower_bound_3d.points)
+        # lower_const_dis = points[:, 2] - lower_bound_points[:, 2]
+        upper_bound_points = np.asarray(self.upper_bound_3d.points)
+        upper_const_dis = points[:, 2] - upper_bound_points[:, 2]
 
-        # pdb.set_trace()        
         # prune unreliable points
         reliability[reliability<rely_thresh] = 0
         candidates *= reliability
@@ -628,6 +695,10 @@ class ReconstructAlign:
         meat_neighborhoods, _, thread_points = self.KNN_neighborhoods(pcd, thread, 10)
         dis = self.norm_of_thread_to_neighbors(meat_neighborhoods, thread_points)
         dis_rely = dis > dis_thresh
+        candidates *= dis_rely
+
+        # prune points with lower thresh too close to meat (reoeat of points too close to meat)
+        upper_rely = (dis - upper_const_dis) > dis_thresh
         candidates *= dis_rely
 
         # prune points too vertical
