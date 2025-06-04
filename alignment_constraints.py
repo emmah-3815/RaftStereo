@@ -7,6 +7,7 @@ import cv2 as cv
 import copy
 import pdb
 from scipy.optimize import Bounds, minimize
+import pickle
 
 
 
@@ -36,7 +37,10 @@ class ReconstructAlign:
         self.t_m_contact = None
         self.vis_objects = []
         self.needle_r = None
-        self.relibility = None
+        self.thread_reliability = None
+        self.thread_lower_constr = None
+        self.thread_upper_constr = None
+
 
     def init_camera_params(self, calib) -> None:
         # camera parameters on non-rectified images
@@ -77,7 +81,7 @@ class ReconstructAlign:
         # instead of adding the needle, use a set of points to indicate needle instead, so that the coordinate frame is given to match with the camera
         if sudo_needle:
             n = 20
-            theta = np.linspace(np.pi/2, np.pi*3/2, n) # orietation suppsetly based on paper
+            theta = np.linspace(np.pi/2, np.pi*3/2, n) # orietation supposedly based on paper
             # theta = np.linspace(-np.pi/2, np.pi/2, n)
             z_lin = np.linspace(0, 0.01, n)
 
@@ -307,16 +311,16 @@ class ReconstructAlign:
             color = red
         return pcd, spheres
 
-    def paint_reliability(self, thread, reliability_file):
-        self.reliability = np.load(reliability_file, allow_pickle=True)
+    def paint_reliability(self, thread):
+        assert(self.thread_reliability is not None)
         # reliability /= np.max(reliability) 
 
-        assert(len(thread.points) == self.reliability.size) # same amount of points
+        assert(len(thread.points) == self.thread_reliability.size) # same amount of points
 
         points = thread.points
         spheres = o3d.geometry.TriangleMesh()
         for i, point in enumerate(points):
-            sphere = self.create_spheres_at_points([point], radius=0.5, color=[1-self.reliability[i], self.reliability[i], 0])
+            sphere = self.create_spheres_at_points([point], radius=0.5, color=[1-self.thread_reliability[i], self.thread_reliability[i], 0])
             spheres += sphere
         return spheres
 
@@ -373,7 +377,6 @@ class ReconstructAlign:
         return object_transform, object_box_transform
 
     def load_needle_pos(self, pos_file):
-        import pickle
         with open(pos_file, 'rb') as f:
             data = pickle.load(f)
 
@@ -383,6 +386,13 @@ class ReconstructAlign:
         # euler_angles = o3d.geometry.get_euler_angles_from_matrix(rotation_matrix)
         # self.needle_pos = np.array((needle_pos[:3], euler_angles))
 
+    def load_thread_specs(self, data_file):
+        with open(data_file, 'rb') as f:
+            data = pickle.load(f)
+
+        self.thread_reliability = data.get('reliability')
+        self.thread_lower_constr = data.get('lower_constr')
+        self.thread_upper_constr = data.get('upper_constr')
 
     def needle_align(self, x, quat=False): # uses the stored needle points
         # pdb.set_trace()
@@ -603,8 +613,8 @@ class ReconstructAlign:
         print("normal constraint results", self.thread_normal_calcs(res.x, pcd, thread))
         return res.x
 
-    def grasp(self, pcd, thread, reliability, rely_thresh=0.7, dis_thresh=2, velo_thresh=0.3):
-        assert(len(thread.points) == self.reliability.size)
+    def grasp(self, pcd, thread, reliability, rely_thresh=0.5, dis_thresh=2, velo_thresh=0.7):
+        assert(len(thread.points) == self.thread_reliability.size)
         assert(self.thread_init and self.meat_init and reliability is not None)
         points = np.asarray(thread.points)
         candidates = np.ones_like(points[:, 0])
@@ -636,8 +646,8 @@ class ReconstructAlign:
         # # top three best points
         # top3_idx = np.argsort(candidates)[-3:][::-1]
         # top3 = points[top3_idx]
-
         top = points[candidates!=0]
+
 
         spheres = o3d.geometry.TriangleMesh()
         for i, point in enumerate(top):

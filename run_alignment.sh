@@ -25,7 +25,7 @@ THREAD_MASK_FILE="${BASE_DIR}/thread_meat_3_21_collected/${TRIAL_NAME}_left_mask
 NEEDLE_MASK_FILE="${BASE_DIR}/thread_meat_3_21_collected/${TRIAL_NAME}_left_n_mask.png"
 
 # reliability
-RELIABILITY_FILE="${BASE_DIR}/thread_meat_3_21_collected/${TRIAL_NAME}_reliability.npy"
+THREAD_SPECS_FILE="${BASE_DIR}/thread_meat_3_21_collected/${TRIAL_NAME}_spline_specs.pkl"
 
 
 python alignment_run.py \
@@ -35,6 +35,6 @@ python alignment_run.py \
     --needle_pos "$NEEDLE_POS_FILE" \
     --thread_mask_file "$THREAD_MASK_FILE" \
     --needle_mask_file "$NEEDLE_MASK_FILE" \
-    --reliability "$RELIABILITY_FILE"
+    --thread_specs_file "$THREAD_SPECS_FILE"
 
     # --meat_mask_file "$MEAT_MASK_FILE" \

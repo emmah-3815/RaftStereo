@@ -22,7 +22,7 @@ if __name__ == '__main__':
     parser.add_argument('--calib', help="camera calibration yaml file", default=os.path.dirname(__file__) + "/assets/camera_calibration_fei.yaml")
     parser.add_argument('--needle', help='path to needle obj file') # , default='/media/emmah/PortableSSD/Arclab_data/paper_singular_needle/frame_000000.npy')
     parser.add_argument('--needle_pos', help='path to needle pos pkl file') # , default='/media/emmah/PortableSSD/Arclab_data/paper_singular_needle/frame_000000.npy')
-    parser.add_argument('--reliability', help='path to thread reliabilty file') # , default='/media/emmah/PortableSSD/Arclab_data/paper_singular_needle/frame_000000.npy')
+    parser.add_argument('--thread_specs_file', help='path to thread specs file') # , default='/media/emmah/PortableSSD/Arclab_data/paper_singular_needle/frame_000000.npy')
 
 
     args = parser.parse_args()
@@ -57,13 +57,14 @@ if __name__ == '__main__':
         needle_pos_file = args.needle_pos if args.needle_pos is not None else"/home/emmah/ARClab/RAFT-Stereo/alignment_dataset/trial_20_needle_pose.pkl"
 
         # reliability
-        reliability_file = args.reliability if args.reliability is not None else None
+        thread_specs_file = args.thread_specs_file if args.thread_specs_file is not None else None
 
         # pdb.set_trace()
         Constraints.add_meat(npy_file, png_file, meat_mask_file, thread_mask_file, needle_mask_file)
         Constraints.add_thread(thread_file)
         Constraints.add_needle(needle_file, needle_r=8.2761)
         Constraints.load_needle_pos(needle_pos_file)
+        Constraints.load_thread_specs(thread_specs_file)
         Constraints.add_origin()
 
 
@@ -105,8 +106,8 @@ if __name__ == '__main__':
     # redraw spheres and neighbors
     Constraints.meat, Constraints.thread_hl = Constraints.KNN_play(Constraints.meat, Constraints.thread)
 
-    Constraints.rely_spheres = Constraints.paint_reliability(Constraints.thread, reliability_file)
-    Constraints.grasp_spheres = Constraints.grasp(Constraints.meat, Constraints.thread, Constraints.reliability)
+    Constraints.rely_spheres = Constraints.paint_reliability(Constraints.thread)
+    Constraints.grasp_spheres = Constraints.grasp(Constraints.meat, Constraints.thread, Constraints.thread_reliability)
     # Constraints.thread_trans = Constraints.align_objects(Constraints.meat, Constraints.thread, Constraints.meat_bound.center, Constraints.thread_bound.center)
     # Constraints.meat, Constraints.spheres_two = Constraints.KNN_play(Constraints.meat, Constraints.thread_trans)
 
