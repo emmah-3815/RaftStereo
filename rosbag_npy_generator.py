@@ -108,14 +108,14 @@ def ros2bag_extract(args):
             if connection.topic == args.topic_l: # topic Name of images
                 msg = reader.deserialize(rawdata, connection.msgtype)
                 cv_img = message_to_cvimage(msg, 'bgr8') # change encoding type if needed
-                cv2.imwrite(os.path.join(left_image_dir, args.output_name + "_%06i.png" % left_count), cv_img)
+                cv2.imwrite(os.path.join(left_image_dir, args.output_name + "_%03i.png" % left_count), cv_img)
                 print ("Wrote left image %i" % left_count)
                 left_count += 1
 
             elif connection.topic == args.topic_r: # topic Name of images
                 msg = reader.deserialize(rawdata, connection.msgtype)
                 cv_img = message_to_cvimage(msg, 'bgr8') # change encoding type if needed
-                cv2.imwrite(os.path.join(right_image_dir, args.output_name + "_%06i.png" % right_count), cv_img)
+                cv2.imwrite(os.path.join(right_image_dir, args.output_name + "_%03i.png" % right_count), cv_img)
                 print ("Wrote right image %i" % right_count)
                 right_count += 1
 
@@ -255,8 +255,8 @@ if __name__ == '__main__':
     DEVICE = 'cpu'
 
     args = parser.parse_args()
-    args.topic_l = '/stereo/left/rectified_downscaled_image'
-    args.topic_r = '/stereo/right/rectified_downscaled_image'
+    # args.topic_l = '/stereo/left/rectified_downscaled_image'
+    # args.topic_r = '/stereo/right/rectified_downscaled_image'
 
     if args.ros1 == True:
         left_dir, right_dir = ros1bag_extract(args)

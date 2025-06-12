@@ -685,6 +685,18 @@ class ReconstructAlign:
         # lower_bound_points = np.asarray(self.lower_bound_3d.points)
         # lower_const_dis = points[:, 2] - lower_bound_points[:, 2]
         upper_bound_points = np.asarray(self.upper_bound_3d.points)
+        def inter_points(points, num):
+            t = np.arange(points.shape[0])
+
+            # Build interpolator for each dimension using vectorized interp1d
+            interp_func = interp.interp1d(t, points, axis=0, kind='linear')
+
+            # Interpolate at new t values
+            t_new = np.linspace(0, 1, num)
+            points_new = interp_func(t_new)
+            return points_new
+    
+        upper_bound_points = inter_points(upper_bound_points, 200)
         upper_const_dis = points[:, 2] - upper_bound_points[:, 2]
 
         # prune unreliable points
@@ -724,7 +736,7 @@ class ReconstructAlign:
         for i, point in enumerate(top):
             sphere = self.create_spheres_at_points([point], radius=2, color=[0, 0, 1])
             spheres += sphere
-        return spheres
+        return top, spheres
 
     
     def create_spheres_at_points(self, points, radius=0.5, color=[1, 0, 0]):

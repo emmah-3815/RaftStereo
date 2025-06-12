@@ -54,7 +54,7 @@ if __name__ == '__main__':
      
         thread_file = args.thread if args.thread is not None else "/media/emmah/PortableSSD/Arclab_data/paper_singular_needle/frame_000000.npy"
         needle_file = args.needle if args.needle is not None else "/media/emmah/PortableSSD/Arclab_data/Needle_R_01146.obj"
-        needle_pos_file = args.needle_pos if args.needle_pos is not None else"/home/emmah/ARClab/RAFT-Stereo/alignment_dataset/trial_20_needle_pose.pkl"
+        needle_pos_file = args.needle_pos if args.needle_pos is not None else f"/home/emmah/ARClab/RAFT_Stereo/alignment_dataset/trial_20_needle_pose.pkl"
 
         # reliability
         thread_specs_file = args.thread_specs_file if args.thread_specs_file is not None else None
@@ -109,7 +109,7 @@ if __name__ == '__main__':
     Constraints.meat, Constraints.thread_hl = Constraints.KNN_play(Constraints.meat, Constraints.thread)
 
     Constraints.rely_spheres = Constraints.paint_reliability(Constraints.thread)
-    Constraints.grasp_spheres = Constraints.grasp(Constraints.meat, Constraints.thread)
+    grasp_points, Constraints.grasp_spheres = Constraints.grasp(Constraints.meat, Constraints.thread)
     # Constraints.thread_trans = Constraints.align_objects(Constraints.meat, Constraints.thread, Constraints.meat_bound.center, Constraints.thread_bound.center)
     # Constraints.meat, Constraints.spheres_two = Constraints.KNN_play(Constraints.meat, Constraints.thread_trans)
 
