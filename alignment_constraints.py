@@ -9,6 +9,8 @@ import pdb
 from scipy.optimize import Bounds, minimize
 import pickle
 import scipy.interpolate as interp
+from datetime import datetime
+from pathlib import Path
 
 
 
@@ -160,27 +162,38 @@ class ReconstructAlign:
             data = pickle.load(f)
 
         self.thread_reliability = data.get('reliability')
-        thread_lower_constr = data.get('lower_constr')
-        thread_upper_constr = data.get('upper_constr')
-
-        self.thread_lower = thread_lower_constr
-        self.thread_upper = thread_upper_constr
-
+        self.thread_lower = data.get('lower_constr')
+        self.thread_upper = data.get('upper_constr')
         # bound_idx = np.linspace(0, 1, len(thread_lower_constr))
         # lower_f = interp.interp1d(bound_idx, thread_lower_constr)
         # upper_f = interp.interp1d(bound_idx, thread_upper_constr)
         # self.thread_lower = lower_f(np.linspace(0, 1, len(self.thread.points))) # get lower const at key points
         # self.thread_upper = upper_f(np.linspace(0, 1, len(self.thread.points))) # get upper const at key points
 
-    def flip_thread(self, thread_file_path:str):
+    def flip_thread(self, thread_file_path:str, thread_spec_path:str=None):
         assert(self.thread_init == True)
         user = input("Flip thread? y/n ")
         if user == "y":
             self.thread_init = False
             thread_data = np.load(thread_file_path, allow_pickle=True)[::-1]
             with open(thread_file_path, "wb") as f:
-                print("saving flipped spline")
+                print("saving flipped thread spline")
                 np.save(f, thread_data)
+
+            # do the same to the thread specs as well
+            if thread_spec_path is not None:
+                # self.thread_reliability = self.thread_reliability[::-1]
+                # self.thread_lower = self.thread_lower
+                # self.thread_upper = self.thread_upper
+                with open(thread_spec_path, 'wb') as f:
+                    print("saving flipped thread specs")
+                    spline_specs = {"reliability": self.thread_reliability[::-1],
+                                    "lower_constr": self.thread_lower,
+                                    "upper_constr": self.thread_upper
+                                    }
+                    pickle.dump(spline_specs, f)
+
+            self.load_thread_specs(thread_spec_path)
             self.add_thread(thread_file_path)
 
     def add_lower_bound_spline(self):
@@ -711,7 +724,7 @@ class ReconstructAlign:
 
         # prune points with lower thresh too close to meat (reoeat of points too close to meat)
         upper_rely = (dis - upper_const_dis) > dis_thresh
-        candidates *= dis_rely
+        candidates *= upper_rely
 
         # prune points too vertical
         z_velocity = points[1:, 2] - points[:-1, 2]
@@ -734,9 +747,27 @@ class ReconstructAlign:
 
         spheres = o3d.geometry.TriangleMesh()
         for i, point in enumerate(top):
-            sphere = self.create_spheres_at_points([point], radius=2, color=[0, 0, 1])
+            sphere = self.create_spheres_at_points([point], radius=2, color=[0, 1-i/len(top), i/len(top)])
             spheres += sphere
         return top, spheres
+
+    def save_with_date(self, data, trial, folder): #data,, trial number, parent folder
+        data = np.asarray(data)
+
+        # Get current date and time string
+        timestamp = datetime.now().strftime("%Y_%m_%d_%H_%M")
+
+        # Construct filename
+        folder = folder / "grasp"
+        folder.mkdir(parents=True, exist_ok=True)
+
+        filename = folder / f"trial_{trial}_{timestamp}.npy"
+
+        # Save array to file
+        np.save(filename, data)
+
+        print(f"Saved to {filename}")
+
 
     
     def create_spheres_at_points(self, points, radius=0.5, color=[1, 0, 0]):

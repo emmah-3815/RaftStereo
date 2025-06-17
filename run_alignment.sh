@@ -32,6 +32,7 @@ python alignment_run.py \
     --npy_file "$NPY_FILE" \
     --png_file "$PNG_FILE" \
     --thread "$THREAD_FILE" \
+    --trial_number "$TRIAL_NUM"\
     --needle_pos "$NEEDLE_POS_FILE" \
     --thread_mask_file "$THREAD_MASK_FILE" \
     --needle_mask_file "$NEEDLE_MASK_FILE" \

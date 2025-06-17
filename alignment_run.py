@@ -2,6 +2,7 @@ from alignment_constraints import ReconstructAlign
 import argparse
 import os
 import pdb
+from pathlib import Path
 
 Constraints = ReconstructAlign()
 
@@ -23,7 +24,7 @@ if __name__ == '__main__':
     parser.add_argument('--needle', help='path to needle obj file') # , default='/media/emmah/PortableSSD/Arclab_data/paper_singular_needle/frame_000000.npy')
     parser.add_argument('--needle_pos', help='path to needle pos pkl file') # , default='/media/emmah/PortableSSD/Arclab_data/paper_singular_needle/frame_000000.npy')
     parser.add_argument('--thread_specs_file', help='path to thread specs file') # , default='/media/emmah/PortableSSD/Arclab_data/paper_singular_needle/frame_000000.npy')
-
+    parser.add_argument('--trial_number', type=int, help="trial number like 1-24")
 
     args = parser.parse_args()
 
@@ -38,6 +39,7 @@ if __name__ == '__main__':
         thread_file = "/home/emmah/ARClab/RAFT-Stereo/alignment_dataset/thread_frame_000000.npy"
         needle_file = "/home/emmah/ARClab/RAFT-Stereo/assets/Needle_R_01146.obj"
         needle_pos_file = "/home/emmah/ARClab/RAFT-Stereo/alignment_dataset/trial_20_needle_pose.pkl"
+        trial_number = 9
         Constraints.add_meat(npy_file, png_file, mask_file)
         Constraints.add_thread(thread_file)
         Constraints.add_needle(needle_file)
@@ -58,6 +60,8 @@ if __name__ == '__main__':
 
         # reliability
         thread_specs_file = args.thread_specs_file if args.thread_specs_file is not None else None
+
+        trial_number = args.trial_number
 
         # pdb.set_trace()
         Constraints.add_meat(npy_file, png_file, meat_mask_file, thread_mask_file, needle_mask_file)
@@ -96,7 +100,7 @@ if __name__ == '__main__':
     Constraints.visualize_objects(objects)
 
     # check if first item of thread is at needle
-    Constraints.flip_thread(thread_file)
+    Constraints.flip_thread(thread_file, thread_specs_file)
     # Constraints.thread, Constraints.thread_bound = Constraints.thread_meat_orient(Constraints.meat, Constraints.thread, Constraints.meat_bound, Constraints.thread_bound)
 
     # depth alignment (runs twice to get closer to the meat)
@@ -170,6 +174,11 @@ if __name__ == '__main__':
     # objects = [Constraints.thread_hl]
     objects = [Constraints.rely_spheres, Constraints.grasp_spheres, Constraints.upper_bound_3d]
     Constraints.visualize_objects(objects)
+
+    save_grasp = input("save graspings points? y ")
+    if save_grasp == 'y':
+        save_path = Path(thread_specs_file).parent
+        Constraints.save_with_date(grasp_points, trial_number, save_path)
 
     Constraints.needle, Constraints.needle_bound = Constraints.needle_thread_conn(Constraints.needle, Constraints.needle_bound, Constraints.thread, Constraints.thread_bound)
 
