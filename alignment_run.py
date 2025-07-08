@@ -114,6 +114,7 @@ if __name__ == '__main__':
 
     Constraints.rely_spheres = Constraints.paint_reliability(Constraints.thread)
     grasp_points, Constraints.grasp_spheres = Constraints.grasp(Constraints.meat, Constraints.thread)
+    goal_H_cams = Constraints.goal_H_cam_gen(grasp_points)
     # Constraints.thread_trans = Constraints.align_objects(Constraints.meat, Constraints.thread, Constraints.meat_bound.center, Constraints.thread_bound.center)
     # Constraints.meat, Constraints.spheres_two = Constraints.KNN_play(Constraints.meat, Constraints.thread_trans)
 

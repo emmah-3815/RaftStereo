@@ -769,7 +769,50 @@ class ReconstructAlign:
         print(f"Saved to {filename}")
 
 
-    
+def goal_H_cam_gen(goals, thresh=5): # goal_file
+    # goals = np.load(goal_file, allow_pickle=True) # array of points along the thread suitable for grasping
+    goal_pos = []
+    normal_base = []
+    for i, _ in enumerate(goals[:-2]):
+        origin = goals[i+1]
+        v0 = origin - goals[i] 
+        v1 = origin - goals[i+2]
+        if np.linalg.norm(v0) > thresh or np.linalg.norm(v1) > thresh: # if distance between origin and previous point or next point is too large, continue
+            continue
+
+        # Sarah's version
+        # pdb.set_trace()
+        xhat = np.cross(v0, v1)
+        xhat = xhat / np.linalg.norm(xhat)
+
+        yhat = (v0 + v1)*0.5 # vector pointing from origin to mid point between adjacent points
+        # yhat = yhat - np.dot(yhat, xhat) * xhat
+        yhat = yhat / np.linalg.norm(yhat)
+        
+        zhat = np.cross(xhat, yhat)
+        zhat = zhat / np.linalg.norm(zhat)
+
+        # yhat = np.cross(zhat, xhat)
+
+        goal_H_cam_tip = np.eye(4)
+
+        goal_H_cam_tip[:3, 0] = xhat
+        goal_H_cam_tip[:3, 1] = yhat
+        goal_H_cam_tip[:3, 2] = zhat
+        goal_H_cam_tip[:3, 3] = origin
+
+        # R_mat = np.column_stack((xhat, yhat, zhat))
+        # rot = R.from_matrix(R_mat)
+        # quat = rot.as_quat()
+
+        # goal_pos.append([*origin, *quat])
+        goal_pos.append(goal_H_cam_tip)
+        normal_base.append([v0, v1])
+
+    goal_pos = np.asarray(goal_pos)
+    # pdb.set_trace()
+    return goal_pos
+
     def create_spheres_at_points(self, points, radius=0.5, color=[1, 0, 0]):
         spheres = o3d.geometry.TriangleMesh()
         for point in points:
