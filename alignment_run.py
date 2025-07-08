@@ -126,7 +126,7 @@ if __name__ == '__main__':
     change = Constraints.slsqp_solver(Constraints.meat, Constraints.thread)
     Constraints.thread_trans = Constraints.thread_transform(change, Constraints.meat, Constraints.thread)
     print(f"after moving {change}, distance is {Constraints.thread_transformation_dis(change, Constraints.meat, Constraints.thread)}")
-    Constraints.meat, Constraints.spheres_two = Constraints.KNN_play(Constraints.meat, Constraints.thread_trans)
+    Constraints.meat, Constraints.spheres_two t= Constraints.KNN_play(Constraints.meat, Constraints.thread_trans)
     print("thread normal calcs after trans")
     Constraints.thread_normal_calcs(change, Constraints.meat, Constraints.thread_trans)
     '''

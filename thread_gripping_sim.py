@@ -67,7 +67,7 @@ def load_goal(goal_file, thresh=10):
         xhat = np.cross(v0, v1)
         xhat = xhat / np.linalg.norm(xhat)
 
-        yhat = (v0 + v1)*0.5 #vector pointing from origin to mid point between adjacent points
+        yhat = (v0 + v1)*0.5 # vector pointing from origin to mid point between adjacent points
         # yhat = yhat - np.dot(yhat, xhat) * xhat
         yhat = yhat / np.linalg.norm(yhat)
         
