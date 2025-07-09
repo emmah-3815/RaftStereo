@@ -61,6 +61,9 @@ def load_goal(goal_file, thresh=10):
         v1 = origin - goals[i+2]
         if np.linalg.norm(v0) > thresh or np.linalg.norm(v1) > thresh: # if distance between origin and previous point or next point is too large, continue
             continue
+        # normalize for a nice mid point calc
+        v0 /= np.linalg.norm(v0)
+        v1 /= np.linalg.norm(v1)
 
         # Sarah's version
         # pdb.set_trace()
@@ -228,6 +231,6 @@ if __name__ == "__main__":
     goal = goals[1]
     # goal = np.array([10, 10, 200, 0.1571893, 0.2847014, 0.0913176, 0.9412214])
     for goal in goals:
-        # trajectory = gen_trajectory(gripper_pos, goal, steps=50)
-        # live_plot(thread, upper, lower, goals_og, trajectory)
-        live_plot(thread, upper, lower, goals_og, [goal])
+        trajectory = gen_trajectory(gripper_pos, goal, steps=50)
+        live_plot(thread, upper, lower, goals_og, trajectory)
+        # live_plot(thread, upper, lower, goals_og, [goal])
