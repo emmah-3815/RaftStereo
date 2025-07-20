@@ -1,0 +1,5 @@
+# random files that I don't need to have in github
+__pycache__/alignment_constraints.cpython-312.pyc
+alignment_dataset/trial_20_needle_pose.pkl
+assets/Needle_R_01146.obj
+img_3d_thread_2_10.npy
