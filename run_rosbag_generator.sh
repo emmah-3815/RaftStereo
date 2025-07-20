@@ -9,14 +9,15 @@ fi
 TRIAL_NUM=$(printf "%01d" $1)
 TRIAL_NAME="trial_$TRIAL_NUM"
 
-BASE_DIR="/media/emmah/PortableSSD/Arclab_data/"
-PARENT_FOLDER="6_12_25"
+BASE_DIR="/media/emmah/PortableSSD/Arclab_data"
+# PARENT_FOLDER="6_12_25"
+PARENT_FOLDER="7_12_25"
 
 # Define paths
 # BAG_FILE="${BASE_DIR}/${PARENT_FOLDER}/${TRIAL_NAME}.bag" # ros 1
 BAG_FILE="${BASE_DIR}/${PARENT_FOLDER}/${TRIAL_NAME}/" # ros 2
 IMAGE_DIR="${BASE_DIR}/${PARENT_FOLDER}/${TRIAL_NAME}/"
-FRAME=1
+FRAME=0
 FRAME_NAME="_$(printf "%03d" $FRAME)"
 
 while true
@@ -72,19 +73,19 @@ do
 
             # masks
             # MEAT_MASK_FILE="${BASE_DIR}/thread_meat_3_21_collected/${TRIAL_NAME}_left_mask.png"
-            THREAD_MASK_FILE="${IMAGE_DIR}left_rgb/${TRIAL_NAME}${FRAME_NAME}_left_mask.png"
-            NEEDLE_MASK_FILE="${IMAGE_DIR}left_rgb/${TRIAL_NAME}${FRAME_NAME}_left_n_mask.png"
+            THREAD_MASK_FILE="${IMAGE_DIR}left_rgb/${TRIAL_NAME}${FRAME_NAME}_mask.png"
+            NEEDLE_MASK_FILE="${IMAGE_DIR}left_rgb/${TRIAL_NAME}${FRAME_NAME}_n_mask.png"
 
             if [ -e "$THREAD_MASK_FILE" ]; then
                 echo "Thread mask exists: $THREAD_MASK_FILE"
-                MASK_ARG="$THREAD_MASK_FILE"
+                MASK_ARGS="--thread_mask_file $THREAD_MASK_FILE "
             else
                 echo "Thread mask not found. Setting thread mask to none."
             fi
 
             if [ -e "$NEEDLE_MASK_FILE" ]; then
                 echo "Needle mask exists: $NEEDLE_MASK_FILE"
-                MASK_ARG+="$NEEDLE_MASK_FILE"
+                MASK_ARGS+="--needle_mask_file $NEEDLE_MASK_FILE"
 
             else
                 echo "Needle mask not found. Setting needle mask to none."

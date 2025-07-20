@@ -3,6 +3,7 @@ import argparse
 import os
 import pdb
 from pathlib import Path
+import numpy as np
 
 Constraints = ReconstructAlign()
 
@@ -76,12 +77,24 @@ if __name__ == '__main__':
     # mark the origin with a sphere
     # origin = Constraints.create_spheres_at_points([[0, 0, 0]])
 
+    # # test average normal
+    # avg_normal, normal_arrow = Constraints.estimate_normal(Constraints.meat, origin=Constraints.meat.points[10000])
+    # interp_upper_bound = Constraints.inter_points(Constraints.upper_bound_3d.points, 200)
+    # interp_upper_pts = Constraints.create_spheres_at_points(interp_upper_bound, radius=0.5, color=[1, 0, 1])
+
     # move needle to the recorded position
-    Constraints.needle, Constraints.needle_bound = Constraints.transform(Constraints.needle_pos, Constraints.needle, Constraints.needle_bound, quat=True)
+    Constraints.needle, Constraints.needle_bound = Constraints.transform(Constraints.needle_pos, 
+                                                                         Constraints.needle, 
+                                                                         Constraints.needle_bound, 
+                                                                         quat=True)
 
 
-    Constraints.meat, Constraints.thread_hl = Constraints.KNN_play(Constraints.meat, Constraints.thread, neighbors=10)
-    meat_neighborhoods, _, thread_points = Constraints.KNN_neighborhoods(Constraints.meat, Constraints.thread, 10)
+    Constraints.meat, Constraints.thread_hl = Constraints.KNN_play(Constraints.meat, 
+                                                                   Constraints.thread, 
+                                                                   neighbors=10)
+    meat_neighborhoods, _, thread_points = Constraints.KNN_neighborhoods(Constraints.meat, 
+                                                                         Constraints.thread, 
+                                                                         10)
     # pdb.set_trace()
 
     # distance between thread and meat nodes
@@ -91,7 +104,13 @@ if __name__ == '__main__':
     change = [0, 0, 0, 0, 0, 0]
     print(f"original distance is {Constraints.thread_transformation_dis(change, Constraints.meat, Constraints.thread, Constraints.meat_bound, Constraints.thread_bound)}")
     # objects = [Constraints.thread_hl, origin]
-    objects = [Constraints.thread_hl, Constraints.lower_bound_3d, Constraints.upper_bound_3d]
+    objects = [Constraints.thread_hl, 
+               Constraints.lower_bound_3d, 
+               Constraints.upper_bound_3d, 
+    ]
+    # Constraints.normal_arrow,
+            #    interp_upper_pts]
+    
     # objects = [Constraints.lower_bound_3d]
     print("thread normal calcs original")
     Constraints.thread_normal_calcs(change, Constraints.meat, Constraints.thread)
@@ -104,16 +123,20 @@ if __name__ == '__main__':
     # Constraints.thread, Constraints.thread_bound = Constraints.thread_meat_orient(Constraints.meat, Constraints.thread, Constraints.meat_bound, Constraints.thread_bound)
 
     # depth alignment (runs twice to get closer to the meat)
-    change = Constraints.depth_solver(Constraints.meat, Constraints.thread)
-    Constraints.meat,Constraints.meat_bound = Constraints.transform(change, Constraints.meat, Constraints.meat_bound)
-    change = Constraints.depth_solver(Constraints.meat, Constraints.thread)
-    Constraints.meat, Constraints.meat_bound = Constraints.transform(change, Constraints.meat, Constraints.meat_bound)
+    # change = Constraints.depth_solver(Constraints.meat, Constraints.thread)
+    # Constraints.meat,Constraints.meat_bound = Constraints.transform(change, Constraints.meat, Constraints.meat_bound)
+    # change = Constraints.depth_solver(Constraints.meat, Constraints.thread)
+    # Constraints.meat, Constraints.meat_bound = Constraints.transform(change, Constraints.meat, Constraints.meat_bound)
 
     # redraw spheres and neighbors
     Constraints.meat, Constraints.thread_hl = Constraints.KNN_play(Constraints.meat, Constraints.thread)
 
     Constraints.rely_spheres = Constraints.paint_reliability(Constraints.thread)
-    grasp_points, Constraints.grasp_spheres = Constraints.grasp(Constraints.meat, Constraints.thread)
+    grasp_points, Constraints.grasp_spheres, meat_neighborhoods, upper_bound_points = Constraints.grasp(Constraints.meat, Constraints.thread)
+    
+    neighbor_avg = np.mean(meat_neighborhoods, axis=1)
+    neighbor_hl = Constraints.create_spheres_at_points(neighbor_avg, color=[0, 0, 1])
+    upper_bound_hl = Constraints.create_spheres_at_points(upper_bound_points, color=[0, 1, 0])
     goal_H_cams = Constraints.goal_H_cam_gen(grasp_points)
     # Constraints.thread_trans = Constraints.align_objects(Constraints.meat, Constraints.thread, Constraints.meat_bound.center, Constraints.thread_bound.center)
     # Constraints.meat, Constraints.spheres_two = Constraints.KNN_play(Constraints.meat, Constraints.thread_trans)
@@ -173,7 +196,7 @@ if __name__ == '__main__':
     # visualize two
     # objects = [Constraints.thread_hl, Constraints.spheres_two, Constraints.thread_trans]
     # objects = [Constraints.thread_hl]
-    objects = [Constraints.rely_spheres, Constraints.grasp_spheres, Constraints.upper_bound_3d]
+    objects = [Constraints.rely_spheres, Constraints.grasp_spheres, Constraints.upper_bound_3d, neighbor_hl, upper_bound_hl]
     Constraints.visualize_objects(objects)
 
     save_grasp = input("save graspings points? y ")

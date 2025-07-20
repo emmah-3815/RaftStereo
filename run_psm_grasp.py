@@ -8,12 +8,19 @@ from scipy.spatial.transform import Rotation as R
 
 import rclpy
 
+# import sys
+
+# Print the list of paths in sys.path
+# for path in sys.path:
+#     print(path)
+
 from read_dvrk_msg.ros_dvrk import ROSdVRK
 from psm_control.psm_control import PsmControl
 
-import utils.dvrk_utils as dvrk_utils
+from psm_control.psm_control import utils as dvrk_utils
 
 import pdb
+import thread_grasp_constraints as grasp_constr
 
 def spinNode(node): 
     rclpy.spin(node)
@@ -23,8 +30,13 @@ if __name__ == '__main__':
     parser.add_argument('-p', '--psm_id', type=int, default=2, 
             choices=[1, 2], 
             help='ID of the PSM that holds the needle')
+    parser.add_argument('-g', '--grasp_thread', type=int, default=1, 
+            choices=[0, 1], 
+            help='grasp needle or confirm robot pose in camera frame')
+    parser.add_argument('-s', "--straighten", action='store_true',)
     args = parser.parse_args()
 
+    print(f"psm id: {args.psm_id}")
     rclpy.init(args = None)
 
     # from Lucas's calibration results
@@ -48,7 +60,9 @@ if __name__ == '__main__':
         needle = True, 
         img = True, 
         mono_img = True, 
-    )
+        needle_tracking = True,
+        joints = True, 
+    ) # just subscribe to all of them
 
     # create a thread for spinning
     spin_thread = threading.Thread(
@@ -62,6 +76,14 @@ if __name__ == '__main__':
     psm_control = PsmControl(ros_dvrk)
     psm_control.openGripper(args.psm_id)
 
+    # straighten end effector 
+    if args.straighten:
+        print("Straightening the end effector...")
+        # get the current joint angles of the PSM
+        joints = ros_dvrk.getSyncMsg()['psm{}_joints'.format(args.psm_id)]
+        straighten_joints = copy.deepcopy(joints)
+        straighten_joints[-3:] = 0  # set the last three joints to 0
+        psm_control.controlArmByJoints(arm_id=args.psm_id, goal_joints=straighten_joints)
 
     # get initial pose of the ee:
     # Record the initial pose in the base frame
@@ -76,166 +98,144 @@ if __name__ == '__main__':
 
     # Convert the initial pose to the camera frame using H_cam_base
     initial_H_cam_ee = np.matmul(H_cam_base, initial_H_base_ee)
+    print(f"Initial end-effector{args.psm_id} pose matrix in camera frame: \n{initial_H_cam_ee.tolist()}")
     initial_pos_cam_ee, initial_quat_cam_ee = dvrk_utils.matrix2PosQuat(initial_H_cam_ee)
     initial_pose_cam_ee = np.concatenate([initial_quat_cam_ee, initial_pos_cam_ee])
 
 
 
-    # get the needle pose
+    if args.grasp_thread==True:
+        print("Thread grasping mode enabled.")
+        # get the thread grasping pose
+        while True:
+            grasp_input = input("input the grasp point transformation matrix: \n")
+            goal_H_cam_tip = np.array(eval(grasp_input))
+            if goal_H_cam_tip.shape == (4, 4):
+                break
+            else:
+                print("Please input a valid 4x4 transformation matrix.")
 
-    ros_msg = ros_dvrk.getSyncMsg()
-    pose_cam_needle = ros_msg['pose_cam_needle'] # (qw, qx, qy, qz, x, y, z)
 
-    H_cam_needle = dvrk_utils.posquat2H(
-        pos = pose_cam_needle[-3:], 
-        quat = pose_cam_needle[:4], 
-    )
-    H_cam_needle = dvrk_utils.getHCamGoal(
-        H_cam_needle = H_cam_needle, 
-        needle_r = 0.01146, 
-        pick = True, 
-    )
+        H_tip_offset_ee = np.eye(4)
+        tip_offset  = -0.005
+        # accoutn for the offset of the grasp point (tip) from the end effector (ee) in the camera frame
+        H_tip_offset_ee = np.array([
+            [1., 0.,  0., 0.], 
+            [0., 1.,  0., tip_offset], 
+            [0., 0.,  1., 0.],
+            [0., 0.,  0., 1.], 
+        ])
 
-    # set the object's pos to be above its actual pos
-    if H_cam_needle[2,3] > 0: 
-        H_cam_needle[:3,3] -= 0.01 * H_cam_needle[:3,2]
-    else: 
-        H_cam_needle[:3,3] += 0.01 * H_cam_needle[:3,2]
+        H_thread_ee = np.eye(4)
+        # H_thread_ee = np.array([
+        #     [1., 0.,  0., 0.], 
+        #     [0., 0., -1., 0.], 
+        #     [0., 1.,  0., 0.],       # rotate 90 degrees around x axis, for needle grasping, not needed here
+        #     [0., 0.,  0., 1.], 
+        # ])        
+        
+        H_thread_ee = np.matmul(H_thread_ee, H_tip_offset_ee)  # rotate 90 degrees around x axis and move the tip offset
+        goal_H_cam_ee = np.matmul(goal_H_cam_tip, H_thread_ee)
 
-    # TODO: depends on the grasping configuration!
-    # (ee, needle): (x, x), (y, z)
-    H_needle_ee = np.array([
-        [1., 0.,  0., 0.], 
-        [0., 0., -1., 0.], 
-        [0., 1.,  0., 0.],
-        [0., 0.,  0., 1.], 
-    ])
+        print(f"Goal end-effector{args.psm_id} pose matrix in camera frame: \n{goal_H_cam_ee.tolist()}")
 
-    goal_H_cam_ee = np.matmul(H_cam_needle, H_needle_ee)
-    goal_pos_cam_ee, goal_quat_cam_ee = dvrk_utils.matrix2PosQuat(goal_H_cam_ee)
-    goal_pose_cam_ee = np.concatenate([goal_quat_cam_ee, goal_pos_cam_ee])
+    
+        # Check current state of robot and grasp goal
+        ros_msg = ros_dvrk.getSyncMsg()
+        pose_cam_ee = ros_msg['pose_cam_ee{}'.format(args.psm_id)]
 
-    # move the ee to be above the needle
-    psm_control.controlPoseReeInCam(
-        psm_id = args.psm_id, 
-        goal_pose_cam_ree = goal_pose_cam_ee, 
-        H_cam_base = H_cam_base, 
-    )
+        curr_H_cam_ee = dvrk_utils.posquat2H(
+            pos=pose_cam_ee[-3:],
+            quat=pose_cam_ee[:4]
+        )
+
+        print(f"Current end-effector{args.psm_id} pose matrix in camera frame: \n{curr_H_cam_ee.tolist()}")
+
+
+        # print(f"Current end-effector position in camera frame: {p_ee}")
+        # goal_pos_cam_ee, goal_quat_cam_ee = dvrk_utils.matrix2PosQuat(goal_H_cam_ee)
+        # print(f"Thread Grasp Goal in camera frame: {goal_pos_cam_ee}")
+
+
+        # compute trajectory from current ee pose to goal ee pose in camera frame
+        # goal_H_cam_ee_traj = grasp_constr.gen_trajectory(start=pose_cam_ee, goal=goal_H_cam_ee, steps=1000)
+        goal_H_cam_ee_traj = np.array([grasp_constr.orient_goal(initial_H_cam_ee, goal_H_cam_ee)])
+
+        for goal_H_cam_ee_step in goal_H_cam_ee_traj:
+            goal_pos_cam_ee, goal_quat_cam_ee = dvrk_utils.matrix2PosQuat(goal_H_cam_ee_step)
+            goal_pose_cam_ee = np.concatenate([goal_quat_cam_ee, goal_pos_cam_ee])
+
+            # move the ee
+            pdb.set_trace()
+            psm_control.controlPoseReeInCam(
+                psm_id = args.psm_id, 
+                goal_pose_cam_ree = goal_pose_cam_ee, 
+                H_cam_base = H_cam_base, 
+            )
+
+            # check current state of robot and step-wise grasp goal, should match
+            ros_msg = ros_dvrk.getSyncMsg()
+            p_ee = ros_msg['pose_cam_ee{}'.format(args.psm_id)][-3:]  # x, y, z
+        
+            print(f"Current end-effector position in camera frame: \n{p_ee}")
+            print(f"Goal end-effector position in camera frame: \n{goal_pos_cam_ee}")
+
+            # Check current state of robot and grasp goal
+            ros_msg = ros_dvrk.getSyncMsg()
+            pose_cam_ee = ros_msg['pose_cam_ee{}'.format(args.psm_id)]
+            print(f"Goal end-effector{args.psm_id} pose matrix in camera frame: \n{goal_H_cam_ee.tolist()}")
+            print(f"Current end-effector{args.psm_id} pose matrix in camera frame: \n{curr_H_cam_ee.tolist()}")
+
+
+            # pause after each step
+            pdb.set_trace()
+            pause = input("Press Enter to continue to the next step...")
+
+    if args.grasp_thread==False:
+        print("Thread grasping mode disabled.")
+
+        # Check current state of robot 
+        ros_msg = ros_dvrk.getSyncMsg()
+        pose_cam_ee = ros_msg['pose_cam_ee{}'.format(args.psm_id)] # rx, ry, rz, rw, x, y, z
+
+        print(f"Current end-effector pos in camera frame: {pose_cam_ee.tolist()}")
+
+        # get the thread grasping pose
+        while True:
+            pos_input = input(f"input psm{args.psm_id} goal pos in camera frame: \n")
+            goal_pose_cam_ee = np.array(eval(pos_input))
+            # pdb.set_trace()
+            if goal_pose_cam_ee.shape == (7,):
+                break
+            else:
+                print("Please input a valid 1x7 [quat, pos] array.")
+
+        # Confirm input
+        print(f"Thread Grasp Goal in camera frame: {goal_pose_cam_ee}")
+
+        pdb.set_trace()
+        # move the ee
+        psm_control.controlPoseReeInCam(
+            psm_id = args.psm_id, 
+            goal_pose_cam_ree = goal_pose_cam_ee, 
+            H_cam_base = H_cam_base, 
+        )
+
+        # check current state of robot and step-wise grasp goal, should match
+        ros_msg = ros_dvrk.getSyncMsg()
+        pose_ee = ros_msg['pose_cam_ee{}'.format(args.psm_id)] # quat, pos
+    
+        print(f"Current end-effector pose in camera frame: {pose_ee}")
+        print(f"Goal end-effector pose in camera frame: {goal_pose_cam_ee}")
+
 
     # move the ee downward to pick up the needle
 
     pdb.set_trace()
-    # ros_msg = ros_dvrk.getSyncMsg()
-    # pose_base_ee = ros_msg['pose_base_ee{}'.format(args.psm_id)] # (qw, qx, qy, qz, x, y, z)
-    # goal_H_base_ee = dvrk_utils.posquat2H(
-    #     pos = pose_base_ee[-3:], 
-    #     quat = pose_base_ee[:4], 
-    # )
-
-    # goal_H_cam_ee = np.matmul(H_cam_base, goal_H_base_ee)
-    # # move 2cm along the ee's y axis
-
-    # goal_H_cam_ee[:3,3] += 0.02 * goal_H_cam_ee[:3,1]
-    # goal_pos_cam_ee, goal_quat_cam_ee = dvrk_utils.matrix2PosQuat(goal_H_cam_ee)
-    # goal_pose_cam_ee = np.concatenate([goal_quat_cam_ee, goal_pos_cam_ee])
-
-    # psm_control.controlPoseReeInCam(
-    #     psm_id = args.psm_id, 
-    #     goal_pose_cam_ree = goal_pose_cam_ee, 
-    #     H_cam_base = H_cam_base, 
-    # )
-
-    '''optionally try moving directly down to pick up the needle'''
-    # Get the current end‐effector pose (in the base frame) and convert it to the camera frame.
-    ros_msg = ros_dvrk.getSyncMsg()
-    p_ee = ros_msg['pose_cam_ee{}'.format(args.psm_id)][-3:]  # x, y, z
-   
-    print(f"Current end-effector position in camera frame: {p_ee}")
-    # Get the needle position in the camera frame.
-    # (H_cam_needle was computed earlier)
-    p_needle = H_cam_needle[:3, 3]
-    print(f"Needle position in camera frame: {p_needle}")
-    # Extract the gravity (world z) direction in the camera frame.
-    # H_cam_world expresses the world (gravity) frame relative to the camera.
-    R_cam_world = H_cam_world[:3, :3]
-    gravity_direction_in_cam = R_cam_world[:, 2]  # the world z-axis
-
-    # Compute the distance between the needle and EE along the gravity direction.
-    distance_along_gravity = 250 * np.linalg.norm(p_needle - p_ee)
-
-    print(f"Distance along gravity: {distance_along_gravity:.4f} m")
-    # Now, move the end-effector by a desired displacement along this gravity direction.
-    # For example, moving 0.005 m (1.5 cm) toward the needle along gravity:
-    goal_H_cam_ee[:3, 3] -= distance_along_gravity * gravity_direction_in_cam
-
-    # Convert back to pose representation and command the robot.
-    goal_pos_cam_ee, goal_quat_cam_ee = dvrk_utils.matrix2PosQuat(goal_H_cam_ee)
-    goal_pose_cam_ee = np.concatenate([goal_quat_cam_ee, goal_pos_cam_ee])
-
-    psm_control.controlPoseReeInCam(
-        psm_id=args.psm_id, 
-        goal_pose_cam_ree=goal_pose_cam_ee, 
-        H_cam_base=H_cam_base, 
-    )
-
-
-
-
 
     # close the gripper
     pdb.set_trace()
     psm_control.closeGripper(args.psm_id, True)
-
-    # move the ee upward to lift the needle
-
-    #pdb.set_trace()
-    # ros_msg = ros_dvrk.getSyncMsg()
-    # pose_base_ee = ros_msg['pose_base_ee{}'.format(args.psm_id)] # (qw, qx, qy, qz, x, y, z)
-    # goal_H_base_ee = dvrk_utils.posquat2H(
-    #     pos = pose_base_ee[-3:], 
-    #     quat = pose_base_ee[:4], 
-    # )
-    # goal_H_cam_ee = np.matmul(H_cam_base, goal_H_base_ee)
-    # # move -5cm along the ee's y axis
-    # goal_H_cam_ee[:3,3] += -0.05 * goal_H_cam_ee[:3,1]
-    # goal_pos_cam_ee, goal_quat_cam_ee = dvrk_utils.matrix2PosQuat(goal_H_cam_ee)
-    # goal_pose_cam_ee = np.concatenate([goal_quat_cam_ee, goal_pos_cam_ee])
-
-    # psm_control.controlPoseReeInCam(
-    #     psm_id = args.psm_id, 
-    #     goal_pose_cam_ree = goal_pose_cam_ee, 
-    #     H_cam_base = H_cam_base, 
-    # )
-
-    ros_msg = ros_dvrk.getSyncMsg()
-    pose_base_ee = ros_msg['pose_base_ee{}'.format(args.psm_id)]  # (qw, qx, qy, qz, x, y, z)
-    goal_H_base_ee = dvrk_utils.posquat2H(
-        pos=pose_base_ee[-3:], 
-        quat=pose_base_ee[:4],
-    )
-    goal_H_cam_ee = np.matmul(H_cam_base, goal_H_base_ee)
-
-    # Compute the gravity direction in the camera frame.
-    # H_cam_world expresses the world (gravity) frame relative to the camera.
-    # Its rotation matrix's third column is the world z-axis (i.e. the gravity direction).
-    R_cam_world = H_cam_world[:3, :3]
-    gravity_direction_in_cam = R_cam_world[:, 2]  # Already normalized
-
-    # Now, move the end-effector by a desired displacement along this gravity direction.
-    # For example, moving 0.005 m (1.5 cm) toward the needle along gravity:
-    goal_H_cam_ee[:3, 3] += 0.025 * gravity_direction_in_cam
-
-    # Convert back to pose representation and command the robot.
-    goal_pos_cam_ee, goal_quat_cam_ee = dvrk_utils.matrix2PosQuat(goal_H_cam_ee)
-    goal_pose_cam_ee = np.concatenate([goal_quat_cam_ee, goal_pos_cam_ee])
-
-    psm_control.controlPoseReeInCam(
-        psm_id=args.psm_id, 
-        goal_pose_cam_ree=goal_pose_cam_ee, 
-        H_cam_base=H_cam_base, 
-    )
-
-
 
     # Command the robot to return to the initial pose in the camera frame
     pdb.set_trace()

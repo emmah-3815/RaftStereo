@@ -259,36 +259,58 @@ class ReconstructAlign:
 
         # Remove flying points
         flying_mask = np.ones((H, W), dtype=bool)
-        flying_mask[1:][np.abs(depth[1:] - depth[:-1]) > 1] = False
-        flying_mask[:,1:][np.abs(depth[:,1:] - depth[:,:-1]) > 1] = False
+        flying_mask[7:][np.abs(depth[7:] - depth[:-7]) > 1] = False
+        flying_mask[:,7:][np.abs(depth[:,7:] - depth[:,:-7]) > 1] = False
 
 
         meat_mask = imread(meat_mask_file).any(axis=2) if meat_mask_file is not None else np.ones((H, W), dtype=bool)
         thread_mask = imread(thread_mask_file)==0 if thread_mask_file is not None else np.ones((H, W), dtype=bool) # equal to zero to flip mask
         needle_mask = imread(needle_mask_file)==0 if needle_mask_file is not None else np.ones((H, W), dtype=bool) # equal to zero to flip mask
-        # pdb.set_trace()
+        kernel_size = 3
+        kernel = np.ones(kernel_size,np.uint8)
+        thread_mask = cv.erode(thread_mask.astype(np.uint8), kernel, iterations=1)
 
         # combine all masks
         mask = meat_mask * thread_mask * needle_mask
 
+        # object_mask =  thread_mask * needle_mask
+        # object_mask = object_mask.astype(bool)
         if self.mask_erode is True:
             kernel_size = 3
             kernel = np.ones(kernel_size,np.uint8)
-            mask = cv.erode(mask.astype(np.uint8), kernel, iterations=1)
+            mask = cv.erode(mask.astype(np.uint8), kernel, iterations=5)
             # imgplot = plt.imshow(meat_mask)
             # plt.show()
+        mask = mask > 0 # change type to bool
+        mask = mask * flying_mask
 
-        mask = mask > 0
-        mask = mask * (np.array(flying_mask))
+        # # Remove flying points after mask is applied
+        # depth = depth[mask]
+        
+        # flying_mask = np.ones((H, W), dtype=bool)
+        # flying_mask[3:][np.abs(depth[3:] - depth[:-3]) > 1] = False
+        # flying_mask[:,3:][np.abs(depth[:,3:] - depth[:,:-3]) > 1] = False
+
+        # mask = mask * flying_mask
+
+        # display mask
+        # import matplotlib.pyplot as plt
+        # plt.imshow(flying_mask, cmap="gray")
+        # plt.show()
+
 
         points = points_grid.transpose(1,2,0)[mask]
         colors = image[mask].astype(np.float64) / 255
-
+        # pdb.set_trace()
         self.meat = o3d.geometry.PointCloud()
         self.meat.points = o3d.utility.Vector3dVector(points)
         self.meat.colors = o3d.utility.Vector3dVector(colors)
-        cl, ind = self.meat.remove_statistical_outlier(nb_neighbors=10, std_ratio=2.0)
-        self.meat = self.meat.select_by_index(ind)
+        cl, ind = self.meat.remove_radius_outlier(nb_points=1000, radius=10, print_progress=True)
+        self.meat = self.meat.select_by_index(ind)        
+
+        # found that remove by radisu outlier generalized better between march trial 24 and july tiral 5
+        # cl, ind = self.meat.remove_statistical_outlier(nb_neighbors=1000, std_ratio=1, print_progress=True)
+        # self.meat = self.meat.select_by_index(ind)
 
         o3d.geometry.PointCloud.estimate_normals(self.meat)
         o3d.geometry.PointCloud.orient_normals_towards_camera_location(self.meat)
@@ -406,8 +428,11 @@ class ReconstructAlign:
 
 
 
-    def KNN_neighborhoods(self, pcd, thread, neighbors=1):
-        key_points = thread.points
+    def KNN_neighborhoods(self, pcd, thread, neighbors=10):
+        if isinstance(thread, o3d.geometry.LineSet):
+            key_points = thread.points
+        elif isinstance(thread, np.ndarray):
+            key_points = thread
         pcd_tree = o3d.geometry.KDTreeFlann(pcd)
         pcd_neighbors = []
         pcd_neighbors_normal = []
@@ -430,11 +455,27 @@ class ReconstructAlign:
             dis.append(norm)
 
         return dis
-    def norm_of_thread_to_neighbors(self, pcd_neighbors, thread_points):
+    def dis_of_points_to_neighbors(self, pcd_neighbors, points):
         # computes the distance of each thread point to its respective pcd_neighbor, takes the average when pcd_neighbor contains more than one point (k>1)
-        dis = np.mean(np.mean(np.absolute(np.array(thread_points)[:, np.newaxis] - np.array(pcd_neighbors)), axis=2), axis=1)
-    
-        return dis
+        # dis = np.mean(np.mean(np.absolute(np.array(thread_points)[:, np.newaxis] - np.array(pcd_neighbors)), axis=2), axis=1)
+        points = np.array(points)
+        pcd_neighors = np.array(pcd_neighbors)
+        neighbors_avg = np.mean(pcd_neighbors, axis=1)
+        diff = neighbors_avg - points
+        norm = np.linalg.norm(diff, axis=1)
+
+        neighbors_avg_norm = np.linalg.norm(neighbors_avg, axis=1)
+        points_norm = np.linalg.norm(points, axis=1)
+        negative = points_norm > neighbors_avg_norm
+        
+        dist = copy.copy(norm)
+        dist[negative] *= -1
+
+
+        # dis = np.mean(np.mean(np.array(points)[:, np.newaxis] - np.array(pcd_neighbors), axis=2), axis=1)
+        # pdb.set_trace()
+
+        return dist
 
     def transform(self, x, object_in, object_box, quat=False): #rotate and translate based on center of object bounding box
         object = copy.copy(object_in)
@@ -446,7 +487,7 @@ class ReconstructAlign:
 
         # rotate
         # R_center = self.generate_bounding_box(object).center # if regenerating bounding box, but can flip coordinate directions
-        R_center = object_box.center
+        R_center = object_box.  center
         T = x[:3]
         object_transform = object.rotate(R, center=R_center)
         object_box_transform = object_box.rotate(R, center=R_center)
@@ -550,7 +591,7 @@ class ReconstructAlign:
         pcd_neighbors_trans, pcd_neighbors_n_trans, key_points_trans = \
             self.KNN_neighborhoods(pcd, thread_trans)
 
-        dis = self.norm_of_thread_to_neighbors(pcd_neighbors_trans, key_points_trans)
+        dis = self.dis_of_points_to_neighbors(pcd_neighbors_trans, key_points_trans)
         dis_sum = np.sum(dis)
         return dis_sum
     
@@ -687,8 +728,44 @@ class ReconstructAlign:
         print("slsqp results", res.x)
         print("normal constraint results", self.thread_normal_calcs(res.x, pcd, thread))
         return res.x
+    
+    def inter_points(self, points, num_new_points):
+        if not isinstance(points, np.ndarray):
+            points = np.asarray(points)
+        t = np.arange(points.shape[0])
 
-    def grasp(self, pcd, thread, rely_thresh=0.5, dis_thresh=2, velo_thresh=0.7):
+
+        '''
+        method one, based on arclength between each point
+        incorrect since the distance between each key point is the same along the spline
+        '''
+        # parameterize points based on arclength, 
+        diffs = np.diff(points, axis=0)
+        seg_lens = np.linalg.norm(diffs, axis=1)
+        arc_lens = np.concatenate([[0], np.cumsum(seg_lens)])
+        # define new sample points based on number of samples wanted
+        arc_len_new = np.linspace(0, arc_lens[-1], num_new_points)
+
+        points_new = np.ones((num_new_points, 3))
+        points_new[:, 0] = np.interp(arc_len_new, arc_lens, points[:, 0]) #new parameter, old parameter, "value at parameter"
+        points_new[:, 1] = np.interp(arc_len_new, arc_lens, points[:, 1])
+        points_new[:, 2] = np.interp(arc_len_new, arc_lens, points[:, 2])
+
+        '''
+        just sample num_new_points instead of # points
+        
+        '''
+        og = np.linspace(0, 1, points.shape[0])
+        new = np.linspace(0, 1, num_new_points)
+        points_new = np.ones((num_new_points, 3))
+        points_new[:, 0] = np.interp(new, og, points[:, 0]) #new parameter, old parameter, "value at parameter"
+        points_new[:, 1] = np.interp(new, og, points[:, 1])
+        points_new[:, 2] = np.interp(new, og, points[:, 2])
+
+
+        return points_new
+
+    def grasp(self, pcd, thread, rely_thresh=0.3, dis_thresh=2, velo_thresh=1):
         reliability = self.thread_reliability
         assert(len(thread.points) == reliability.size)
         assert(self.thread_init and self.meat_init and reliability is not None)
@@ -698,33 +775,37 @@ class ReconstructAlign:
         # lower_bound_points = np.asarray(self.lower_bound_3d.points)
         # lower_const_dis = points[:, 2] - lower_bound_points[:, 2]
         upper_bound_points = np.asarray(self.upper_bound_3d.points)
-        def inter_points(points, num):
-            t = np.arange(points.shape[0])
 
-            # Build interpolator for each dimension using vectorized interp1d
-            interp_func = interp.interp1d(t, points, axis=0, kind='linear')
-
-            # Interpolate at new t values
-            t_new = np.linspace(0, 1, num)
-            points_new = interp_func(t_new)
-            return points_new
     
-        upper_bound_points = inter_points(upper_bound_points, 200)
-        upper_const_dis = points[:, 2] - upper_bound_points[:, 2]
+        upper_bound_points = self.inter_points(upper_bound_points, 200)
+        upper_const_dis = upper_bound_points[:, 2] - points[:, 2] 
 
         # prune unreliable points
-        reliability[reliability<rely_thresh] = 0
+        reliability[reliability<rely_thresh] = False
         candidates *= reliability
 
-        # prune points too close to meat
-        meat_neighborhoods, _, thread_points = self.KNN_neighborhoods(pcd, thread, 10)
-        dis = self.norm_of_thread_to_neighbors(meat_neighborhoods, thread_points)
+        ## reliability version one
+        # # prune points too close to meat
+        # meat_neighborhoods, _, thread_points = self.KNN_neighborhoods(pcd, thread, 10)
+        # dis = self.norm_of_thread_to_neighbors(meat_neighborhoods, thread_points)
+        # dis_rely = dis > dis_thresh
+        # candidates *= dis_rely
+
+        # # prune points with lower thresh closer to meat than thread
+        # upper_rely = (dis - upper_const_dis) > dis_thresh
+        # candidates *= upper_rely
+
+        ## reliability version two
+        # just consider the distance from the upper bound too close to the meat 
+        meat_neighborhoods, _, thread_points = self.KNN_neighborhoods(pcd, thread, 1)
+        # pdb.set_trace()
+
+
+
+        dis = self.dis_of_points_to_neighbors(meat_neighborhoods, upper_bound_points)
+        # pdb.set_trace()
         dis_rely = dis > dis_thresh
         candidates *= dis_rely
-
-        # prune points with lower thresh too close to meat (reoeat of points too close to meat)
-        upper_rely = (dis - upper_const_dis) > dis_thresh
-        candidates *= upper_rely
 
         # prune points too vertical
         z_velocity = points[1:, 2] - points[:-1, 2]
@@ -749,8 +830,8 @@ class ReconstructAlign:
         for i, point in enumerate(top):
             sphere = self.create_spheres_at_points([point], radius=2, color=[0, 1-i/len(top), i/len(top)])
             spheres += sphere
-        return top, spheres
-
+        return top, spheres, meat_neighborhoods, upper_bound_points
+    
     def save_with_date(self, data, trial, folder): #data,, trial number, parent folder
         data = np.asarray(data)
 
@@ -768,8 +849,37 @@ class ReconstructAlign:
 
         print(f"Saved to {filename}")
 
+    def estimate_normal(self, tissue=None, origin=(0, 0, 0)):
+        # find the average normal of the meat, exclude outliers with standard diviation?
+        # export as a vector
+        assert(tissue!=None)
+        from scipy import stats
+        normals = np.asarray(tissue.normals)
+        z_scores = np.abs(stats.zscore(normals))
 
-    def goal_H_cam_gen(goals, thresh=5): # goal_file
+        threshold = 3  # Common threshold for outlier detection
+        filter = np.all(z_scores<threshold, axis=1)
+        filtered_normals = normals[filter]
+
+        avg_normal = np.average(filtered_normals, axis=0)
+
+        scale=100
+        cone_height = scale*0.2
+        cylinder_height = scale*0.8
+        cone_radius = scale/10
+        cylinder_radius = scale/20
+        self.normal_arrow = o3d.geometry.TriangleMesh.create_arrow(cone_radius=1,
+            cone_height=cone_height,
+            cylinder_radius=0.5,
+            cylinder_height=cylinder_height)
+        
+        R = self.align_vector_to_vector([0, 0, 1], avg_normal)
+        self.normal_arrow.rotate(R, center=[0, 0, 0])
+        self.normal_arrow.translate(origin)
+        return avg_normal, self.normal_arrow
+
+
+    def goal_H_cam_gen(self, goals, thresh=5): # goal_file
         # goals = np.load(goal_file, allow_pickle=True) # array of points along the thread suitable for grasping
         goal_pos = []
         normal_base = []
