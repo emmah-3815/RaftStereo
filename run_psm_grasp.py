@@ -124,6 +124,9 @@ if __name__ == '__main__':
 
     # move the ee downward to pick up the needle
 
+
+
+
     pdb.set_trace()
     # ros_msg = ros_dvrk.getSyncMsg()
     # pose_base_ee = ros_msg['pose_base_ee{}'.format(args.psm_id)] # (qw, qx, qy, qz, x, y, z)
