@@ -126,20 +126,16 @@ if __name__ == '__main__':
             [0., 0.,  0., 1.], 
         ])
 
-        H_thread_ee = np.eye(4)
-        # H_thread_ee = np.array([
-        #     [1., 0.,  0., 0.], 
-        #     [0., 0., -1., 0.], 
-        #     [0., 1.,  0., 0.],       # rotate 90 degrees around x axis, for needle grasping, not needed here
-        #     [0., 0.,  0., 1.], 
-        # ])        
-        
-        H_thread_ee = np.matmul(H_thread_ee, H_tip_offset_ee)  # rotate 90 degrees around x axis and move the tip offset
-        goal_H_cam_ee = np.matmul(goal_H_cam_tip, H_thread_ee)
+        goal_H_cam_ee = np.matmul(H_tip_offset_ee, goal_H_cam_tip)  # rotate 90 degrees around x axis and move the tip offset
+        goal_H_cam_ee = grasp_constr.orient_goal(initial_H_cam_ee, goal_H_cam_ee)        
+
+        approach_H_cam_ee = copy.copy(goal_H_cam_ee)
+        approach_len = 0.015
+        approach_H_cam_ee[:3, 3] -= approach_H_cam_ee[:3, 1] * approach_len # based on Neelay's execute_grasp
+
 
         print(f"Goal end-effector{args.psm_id} pose matrix in camera frame: \n{goal_H_cam_ee.tolist()}")
 
-    
         # Check current state of robot and grasp goal
         ros_msg = ros_dvrk.getSyncMsg()
         pose_cam_ee = ros_msg['pose_cam_ee{}'.format(args.psm_id)]
@@ -151,16 +147,9 @@ if __name__ == '__main__':
 
         print(f"Current end-effector{args.psm_id} pose matrix in camera frame: \n{curr_H_cam_ee.tolist()}")
 
-
-        # print(f"Current end-effector position in camera frame: {p_ee}")
-        # goal_pos_cam_ee, goal_quat_cam_ee = dvrk_utils.matrix2PosQuat(goal_H_cam_ee)
-        # print(f"Thread Grasp Goal in camera frame: {goal_pos_cam_ee}")
-
-
-        # compute trajectory from current ee pose to goal ee pose in camera frame
-        # goal_H_cam_ee_traj = grasp_constr.gen_trajectory(start=pose_cam_ee, goal=goal_H_cam_ee, steps=1000)
-        goal_H_cam_ee_traj = np.array([grasp_constr.orient_goal(initial_H_cam_ee, goal_H_cam_ee)])
-
+        
+        goal_H_cam_ee_traj = np.array([approach_H_cam_ee, goal_H_cam_ee])
+    
         for goal_H_cam_ee_step in goal_H_cam_ee_traj:
             goal_pos_cam_ee, goal_quat_cam_ee = dvrk_utils.matrix2PosQuat(goal_H_cam_ee_step)
             goal_pose_cam_ee = np.concatenate([goal_quat_cam_ee, goal_pos_cam_ee])
